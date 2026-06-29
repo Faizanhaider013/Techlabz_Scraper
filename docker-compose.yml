@@ -1,0 +1,25 @@
+# Local PostgreSQL for development.
+# Start with:  docker compose up -d
+# Then set in backend/.env:
+#   DATABASE_URL=postgresql+psycopg2://jobuser:jobpass@localhost:5432/jobaggregator
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: job_aggregator_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: jobuser
+      POSTGRES_PASSWORD: jobpass
+      POSTGRES_DB: jobaggregator
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U jobuser -d jobaggregator"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:

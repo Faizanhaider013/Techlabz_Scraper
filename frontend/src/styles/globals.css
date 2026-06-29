@@ -1,0 +1,41 @@
+/* Premium font system */
+@import "@fontsource/inter/400.css";
+@import "@fontsource/inter/500.css";
+@import "@fontsource/inter/600.css";
+@import "@fontsource/inter/700.css";
+@import "@fontsource/plus-jakarta-sans/600.css";
+@import "@fontsource/plus-jakarta-sans/700.css";
+@import "@fontsource/jetbrains-mono/500.css";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+  body {
+    @apply bg-slate-50 font-sans text-slate-700 antialiased;
+    font-feature-settings: "cv11", "ss01";
+    text-rendering: optimizeLegibility;
+  }
+  ::selection {
+    @apply bg-indigo-600/15 text-indigo-900;
+  }
+}
+
+@layer utilities {
+  /* Thin, subtle scrollbars for panels */
+  .scrollbar-soft {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(203 213 225) transparent;
+  }
+  .scrollbar-soft::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  .scrollbar-soft::-webkit-scrollbar-thumb {
+    @apply rounded-full bg-slate-300;
+  }
+}
