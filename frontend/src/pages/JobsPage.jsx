@@ -119,7 +119,7 @@ export default function JobsPage() {
       await Promise.all([fetchJobs(), fetchMeta(), fetchDiagnostics()]);
       setLastRefreshed(new Date().toISOString());
       if ((result?.total_new ?? 0) > 0) {
-        showToast("success", `Done — ${result.total_new} ServiceNow remote US job(s) saved.`);
+        showToast("success", `Done — ${result.total_new} remote tech job(s) saved.`);
         // Smooth scroll to results.
         setTimeout(() => resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 150);
       } else {
@@ -227,12 +227,8 @@ export default function JobsPage() {
               />
             ) : jobs.length === 0 ? (
               <EmptyState
-                title={
-                  windowDays > 0
-                    ? `No ServiceNow Remote US jobs from the last ${windowDays} days were found yet.`
-                    : "No ServiceNow Remote US jobs posted today were found yet."
-                }
-                message="The scraper checked active sources, but no jobs passed the ServiceNow + Remote + United States filters in this window."
+                title="No matching remote tech jobs found from active sources."
+                message="The scraper checked active sources, but no jobs passed the relevance + Remote + US filters in this window. Try changing the category or filters, or refresh to run the scraper again."
                 onRefresh={handleRefresh}
                 onViewDiagnostics={() => setView("diagnostics")}
                 refreshing={refreshing}

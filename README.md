@@ -1,29 +1,79 @@
-# ServiceNow Remote US Jobs — Scraper + Website
+# Remote Tech Jobs Aggregator — Scraper + Website
 
-**Project target: only remote, US-based ServiceNow jobs.**
+**Real remote software and technology jobs from trusted sources.**
 
-Automatically collects job postings from multiple **compliant** job sources,
-applies a **strict 3-way relevance filter (ServiceNow + Remote + US)**,
-deduplicates them, tags jobs **posted today**, and serves them on a clean,
-searchable, filterable website.
+Automatically collects job postings from multiple **compliant** job sources
+across **many tech categories** (ServiceNow, PHP/Laravel, Node.js, React,
+MERN/MEAN, Full Stack, Software Engineer, Python, DevOps/Cloud, Data/AI, and
+QA/Automation), scores each job for **category relevance**, deduplicates them,
+tags jobs **posted recently**, and serves them on a clean, searchable,
+filterable website.
 
-A job is saved/shown only if it passes **all three** checks:
+A job is saved/shown only if it passes **all** checks:
 
-1. **ServiceNow-related** — the combined job text genuinely mentions
-   `servicenow` / `service now` (the scraper's search keyword is *excluded* from
-   this check, so a generic "remote developer" job can never sneak in).
+1. **Relevant** — the job matches at least one enabled category with a relevance
+   score `>= MIN_RELEVANCE_SCORE` (default 70). Non-tech roles (sales, marketing,
+   support, etc.) are rejected. ServiceNow stays **strict**: generic ITSM/CMDB/GRC
+   without a ServiceNow-specific term never counts as ServiceNow.
 2. **Remote** — clearly remote (explicit remote flag or remote wording; hybrid /
    onsite-only are rejected).
-3. **US** — US-based or open to US candidates (United States / USA / U.S. /
-   Remote US …). Brazil/India/Europe/UK/Canada/worldwide-only are rejected.
+3. **US** (or Canada) — US-based or open to US/Canada candidates. Other
+   countries / worldwide-only are rejected by default.
 
-> It is better to show **0 jobs than irrelevant jobs**. If the live APIs have no
-> genuine ServiceNow remote-US roles right now, the site honestly shows none —
-> it never fabricates or pads results.
+> It is better to show **0 jobs than irrelevant jobs**. The scraper never
+> fabricates or pads results — no fake/mock jobs in production.
 
-The filter is configurable (`REQUIRED_MATCH_TERM`, `REMOTE_ONLY`,
-`TARGET_COUNTRY`), so the same engine can target any role/country later without
-code changes.
+Everything is configurable via env (`JOB_MODE`, `ENABLED_JOB_CATEGORIES`,
+`MIN_RELEVANCE_SCORE`, `REMOTE_ONLY`, `TARGET_COUNTRY`, `LOOKBACK_DAYS`).
+
+## Supported categories
+
+| id | category | examples |
+|----|----------|----------|
+| `servicenow` | ServiceNow | Developer, Admin, Consultant, ITSM/ITOM/CMDB/HRSD/CSM/SecOps |
+| `php_laravel` | PHP / Laravel | PHP/Laravel/Symfony/WordPress/Magento |
+| `node_backend` | Node.js / Backend | Node.js, Express, NestJS, API, GraphQL |
+| `react_frontend` | React / Frontend | React, Next.js, Redux, UI |
+| `mern` | MERN Stack | Mongo + Express + React + Node |
+| `mean` | MEAN Stack | Mongo + Express + Angular + Node |
+| `fullstack` | Full Stack | Full Stack (React/Node/Laravel/PHP/MERN/MEAN) |
+| `software_engineer` | Software Engineer | Software/Application/Platform/Product Engineer |
+| `python_backend` | Python / Backend | Python, Django, Flask, FastAPI |
+| `devops_cloud` | DevOps / Cloud | DevOps, AWS/Azure/GCP, Kubernetes, SRE |
+| `data_ai` | Data / AI | Data/ML/AI/NLP/LLM Engineer, Data Scientist |
+| `qa_automation` | QA / Automation | QA, SDET, Selenium, Cypress, Playwright |
+
+Categories, keywords, and scoring terms live in
+[`backend/app/scraper/job_taxonomy.py`](./backend/app/scraper/job_taxonomy.py).
+Run `python -m app.cli list-categories` / `list-keywords` to print them.
+
+### Enable / disable categories & add keywords
+
+- **Toggle categories:** set `ENABLED_JOB_CATEGORIES` in `backend/.env` to a
+  comma-separated subset of the ids above (e.g.
+  `ENABLED_JOB_CATEGORIES=react_frontend,node_backend,fullstack`).
+- **Add keywords / a new category:** edit `job_taxonomy.py` — add to a category's
+  `keywords`/`strong_terms`, or append a new `Category(...)` to `_DEFS` and add
+  its id to `ENABLED_JOB_CATEGORIES`. No other code changes needed.
+- **Tune precision:** raise/lower `MIN_RELEVANCE_SCORE` (higher = stricter).
+
+### How relevance scoring works
+
+`classify_job_category` scores a job against each enabled category:
+`+100` exact keyword in title, `+80` keyword in description, `+50` strong stack
+term in title, `+30` strong term in description, `+60` role-title + stack match,
+`+20` weak/supporting term. The best category becomes `primary_category`; a job
+is accepted when the best score reaches `MIN_RELEVANCE_SCORE`. Generic
+ITSM/CMDB/GRC never reach the threshold on their own, preserving ServiceNow
+precision (`SERVICENOW_STRICT_MODE=true`).
+
+### How remote / US filtering works
+
+Remote passes on an explicit remote flag or remote wording in
+title/description/location/candidate-location (hybrid/onsite-only rejected). US
+passes on United States / USA / U.S. / Remote US / US state names+codes;
+`ALLOW_US_OR_CANADA=true` also accepts Canadian remote roles;
+worldwide-only passes only if `ALLOW_WORLDWIDE_REMOTE_IF_US_NOT_EXCLUDED=true`.
 
 ---
 
@@ -236,8 +286,11 @@ python -m venv .venv
 pip install -r requirements.txt
 Copy-Item .env.example .env
 python -m app.cli reset-db
+python -m app.cli scrape-recent      # scrape last LOOKBACK_DAYS across all categories
 python -m app.cli diagnose-sources   # dry run: per-source funnel table (why 0 jobs?)
-python -m app.cli scrape
+python -m app.cli diagnose-queries   # dry run: per-query funnel table
+python -m app.cli list-categories    # categories + enabled state
+python -m app.cli list-keywords      # all category keywords
 uvicorn app.main:app --reload --port 8000
 ```
 
@@ -272,6 +325,10 @@ python -m app.cli reset-db
 # Dry-run diagnostics: per-source and per-query funnels (nothing saved)
 python -m app.cli diagnose-sources
 python -m app.cli diagnose-queries
+
+# Print job categories (+ enabled state) and all category keywords
+python -m app.cli list-categories
+python -m app.cli list-keywords
 
 # Print every ServiceNow module group + the generated query set
 python -m app.cli list-modules
