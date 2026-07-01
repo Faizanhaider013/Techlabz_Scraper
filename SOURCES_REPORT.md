@@ -1,116 +1,112 @@
-# Sources Compliance Report
+# Sources Report
 
-This report documents every job source the system is aware of, whether it is
-**included** (actively scraped) or **skipped/blocked**, and the compliance
-reasoning behind each decision. It is generated from the same adapter metadata
-that powers the `GET /api/sources` endpoint, so the API and this document never
-drift apart.
+Complete inventory of all job sources integrated (or evaluated) by the scraper.
+Each source is documented with its access method, compliance status, and implementation state.
 
-> **Responsible scraping policy** (enforced in code):
-> 1. Prefer official APIs over HTML scraping.
-> 2. Check robots.txt and Terms of Service before enabling a source.
-> 3. Never scrape a source that forbids it — mark it skipped with a reason instead.
-> 4. Apply polite delays / rate limiting between requests (`REQUEST_DELAY_SECONDS`).
-> 5. Store only the minimum job fields needed.
-> 6. Always link back to the original posting (`original_apply_url`).
-> 7. Never proceed silently on an uncertain source — record a blocker note here.
+## Source Summary Table
 
----
+| Source | Domain | Status | Method | Requires Key? | Requires Login? | Implemented? | Risk Level | Notes |
+|--------|--------|--------|--------|---------------|-----------------|--------------|------------|-------|
+| RemoteOK | remoteok.com | ✅ Active | Public JSON API | No | No | Yes | Low | Full feed, client-side filter |
+| Remotive | remotive.com | ✅ Active | Public REST API | No | No | Yes | Low | Server-side search, `?search=` param |
+| Arbeitnow | arbeitnow.com | ✅ Active | Public JSON API | No | No | Yes | Low | Paginated feed, keyword filter |
+| Himalayas | himalayas.app | ✅ Active | Public JSON API | No | No | Yes | Low | Remote-only board, paginated |
+| Greenhouse | greenhouse.io | ✅ Active | Public Board API | No | No | Yes | Low | Per-board JSON, configured via env |
+| Lever | lever.co | ✅ Active | Public Postings API | No | No | Yes | Low | Per-company JSON, configured via env |
+| Ashby | ashbyhq.com | ✅ Active | Public Board API | No | No | Yes | Low | Per-org JSON, configured via env |
+| We Work Remotely | weworkremotely.com | ✅ Active | Public RSS feed | No | No | Yes | Low | Multiple category feeds |
+| Working Nomads | workingnomads.com | ✅ Active | Public JSON API | No | No | Yes | Low | `/api/exposed_jobs/` endpoint |
+| Jobspresso | jobspresso.co | ✅ Active | Public RSS feed | No | No | Yes | Low | RSS feed at `/feed/` |
+| Remote.co | remote.co | ✅ Active | Public RSS feed | No | No | Yes | Low | Developer category RSS |
+| NoDesk | nodesk.co | ✅ Active | Public RSS feed | No | No | Yes | Low | Remote jobs RSS feed |
+| SkipTheDrive | skipthedrive.com | ✅ Active | Public RSS feed | No | No | Yes | Low | RSS feed at `/feed/` |
+| Hubstaff Talent | talent.hubstaff.com | ✅ Active | Public JSON API | No | No | Yes | Low | `/api/v1/jobs` endpoint |
+| Europe Remotely | europeremotely.com | ✅ Active | Public RSS feed | No | No | Yes | Low | Europe-focused; US filter applies |
+| Waw Asia | waw.asia | ✅ Active | Public RSS feed | No | No | Yes | Low | Asia-focused; US filter applies |
+| Remote4Me | remote4me.com | ✅ Active | Public RSS feed | No | No | Yes | Medium | Aggregator, may block |
+| Pangian | pangian.com | ✅ Active | Public RSS feed | No | No | Yes | Medium | May require login for some |
+| Remotees | remotees.com | ✅ Active | Public RSS feed | No | No | Yes | Medium | Small board |
+| Outsourcely | outsourcely.com | ✅ Active | Public RSS feed | No | Partial | Yes | Medium | May need login for full data |
+| Remote Freelance | remotefreelance.com | ✅ Active | Public RSS feed | No | No | Yes | Medium | Small freelance board |
+| Company Careers | Multi-ATS | ✅ Active | GH/Lever/Ashby APIs | No | No | Yes | Low | Tries 27 companies |
+| SmartRecruiters | smartrecruiters.com | ✅ Active | Public JSON API | No | No | Yes | Low | Needs company tokens |
+| Workday | myworkdayjobs.com | ✅ Active | Public JSON API | No | No | Yes | Medium | Auto-discovers tenant URLs |
+| Recruitee | recruitee.com | ✅ Active | Public JSON API | No | No | Yes | Low | Needs company subdomains |
+| Teamtailor | teamtailor.com | ✅ Active | Public JSON API | No | No | Yes | Low | Needs company subdomains |
+| Adzuna | adzuna.com | 🔑 Needs Key | REST API | Yes | No | Yes | Low | ENABLE_ADZUNA + keys |
+| USAJOBS | usajobs.gov | 🔑 Needs Key | REST API | Yes | No | Yes | Low | ENABLE_USAJOBS + keys |
+| The Muse | themuse.com | 🔑 Needs Key | REST API | Yes | No | Yes | Low | ENABLE_THE_MUSE + key |
+| Jooble | jooble.org | 🔑 Needs Key | REST API | Yes | No | Yes | Low | ENABLE_JOOBLE + key |
+| Built In | builtin.com | ⚠️ Blocked | HTML scraping | No | No | Best-effort | High | 403 anti-bot, JS-rendered |
+| Hiring Cafe | hiringcafe.com | ⚠️ Blocked | HTML scraping | No | No | Best-effort | High | No public API |
+| Jobright | jobright.ai | ⚠️ Blocked | HTML scraping | No | No | Best-effort | High | Anti-bot protections |
+| LinkedIn | linkedin.com | 🚫 Blocked | N/A | N/A | Yes | Stub | Critical | TOS prohibits scraping |
+| Indeed | indeed.com | 🚫 Blocked | N/A | N/A | No | Stub | Critical | Publisher API retired |
+| SimplyHired | simplyhired.com | 🚫 Blocked | N/A | N/A | No | Stub | Critical | Indeed network, blocked |
+| Glassdoor | glassdoor.com | 🚫 Blocked | N/A | N/A | Yes | Stub | Critical | Partner-gated API |
+| ZipRecruiter | ziprecruiter.com | 🚫 Blocked | N/A | N/A | No | Stub | Critical | TOS restricts crawling |
+| FlexJobs | flexjobs.com | 🚫 Blocked | N/A | N/A | Yes (paid) | Stub | Critical | Paywalled membership |
+| Toptal | toptal.com | ⏭️ Skipped | N/A | N/A | N/A | Stub | N/A | Talent marketplace, not job board |
+| Virtual Vocations | virtualvocations.com | ⏭️ Skipped | N/A | N/A | Yes (paid) | Stub | N/A | Paywalled membership |
+| Stack Overflow Jobs | stackoverflow.com | ⏭️ Skipped | N/A | N/A | N/A | Stub | N/A | Discontinued in 2022 |
+| RemoteHabits | remotehabits.com | ⏭️ Skipped | N/A | N/A | N/A | Stub | N/A | Content site, no job board |
+| Wellfound | wellfound.com | 🚫 Blocked | N/A | N/A | Yes | Stub | High | Login + anti-bot required |
+| Upwork | upwork.com | 🚫 Blocked | N/A | N/A | Yes | Stub | Critical | Gated marketplace |
+| Freelancer | freelancer.com | 🚫 Blocked | N/A | N/A | Yes | Stub | Critical | Gated marketplace |
+| Remote Rocketship | remoterocketship.com | ⏭️ Skipped | N/A | N/A | N/A | Stub | N/A | No verified public source |
+| Remote of Asia | N/A | ⏭️ Skipped | N/A | N/A | N/A | Stub | N/A | No verified source |
+| RemoteOK Europe | remoteok.com | ⏭️ Skipped | N/A | N/A | N/A | Stub | N/A | Handled by RemoteOK adapter |
 
-## ✅ Included sources (active)
+## Source Status Legend
 
-| Source | Type | Official API? | robots/TOS reviewed | Supports remote? | Supports US location filter? | Notes |
-|--------|------|---------------|---------------------|------------------|------------------------------|-------|
-| **RemoteOK** | Public JSON API | Yes — `https://remoteok.com/api` | Yes | Yes (remote-only board) | Partial — `location` field varies; backend US filter applied | Public machine-readable feed. Filtered by keyword client-side, request delay applied, links back to each job's URL. |
-| **Remotive** | Public REST API | Yes — `https://remotive.com/api/remote-jobs` | Yes | Yes (remote-only board) | Yes — `candidate_required_location` mapped, backend US filter applied | Documented public API with a `search` param. No key. Attribution preserved. |
-| **Arbeitnow** | Public Job Board API | Yes — `https://www.arbeitnow.com/api/job-board-api` | Yes | Yes — real `remote` flag mapped | Partial — `location` mapped, backend US filter applied | Free public API, no key. Pagination capped to ~3 pages/run for politeness. |
-| **Himalayas** | Public Remote Jobs API | Yes — `https://himalayas.app/jobs/api` | Yes — robots.txt allows everything except `/apply` | Yes (remote-only board) | Yes — `locationRestrictions` mapped (e.g. ["United States"]) | Free public JSON feed, no key. Feed is keyword-independent, so we fetch the freshest ~300 listings once per run (cached) and filter locally. Toggle: `ENABLE_HIMALAYAS`. |
-| **Greenhouse** | Public ATS board API | Yes — `https://boards-api.greenhouse.io/v1/boards/{board}/jobs` | Yes — public per-employer boards | Inferred from `location.name` text | Yes — backend US filter + US-state recognition | **No API key.** Per-employer boards configured via `GREENHOUSE_BOARDS`. Best source of genuine ServiceNow roles (add ServiceNow partner firms). |
-| **Lever** | Public ATS board API | Yes — `https://api.lever.co/v0/postings/{company}?mode=json` | Yes — public per-employer boards | Yes — `workplaceType` mapped | Yes — `location`+`country` mapped, US-state recognition | **No API key.** Configured via `LEVER_COMPANIES`. |
-| **Ashby** | Public ATS board API | Yes — `https://api.ashbyhq.com/posting-api/job-board/{org}` | Yes — public per-employer boards | Yes — `isRemote`/`workplaceType` mapped | Yes — `addressCountry` + secondary locations mapped | **No API key.** Configured via `ASHBY_BOARDS`. |
-| **MockDev** *(dev only)* | Local mock | N/A | N/A | Yes | Yes | **Disabled by default.** Active only when `ENABLE_MOCK_DATA=true`. Provides 3 sample ServiceNow remote-US jobs so the pipeline/UI can be demonstrated. Never used in production. |
+| Status | Meaning |
+|--------|---------|
+| ✅ Active | Source is queried during scraper runs |
+| 🔑 Needs Key | Source requires API key(s) to activate |
+| ⚠️ Blocked | Best-effort attempt made; blocked by anti-bot/403 |
+| 🚫 Blocked | Compliance-blocked; never queried |
+| ⏭️ Skipped | Source is not viable (discontinued, no job board, etc.) |
 
-> **Company ATS boards (Greenhouse / Lever / Ashby)** are the highest-quality,
-> fully-compliant way to collect real ServiceNow roles — they pull jobs directly
-> from employers with **no API key**. Populate `GREENHOUSE_BOARDS` /
-> `LEVER_COMPANIES` / `ASHBY_BOARDS` in `.env` with the board tokens of ServiceNow
-> partner/consulting firms (e.g. found at `boards.greenhouse.io/<token>`,
-> `jobs.lever.co/<token>`, `jobs.ashbyhq.com/<token>`). Empty lists are a safe no-op.
+## Company Career Targets
 
-These sources prove the end-to-end pipeline (collect → normalize → **strict
-filter** → dedupe → tag "posted today" → store → serve) using only officially
-provided, key-free APIs.
+The **CompanyCareers** source attempts to discover job listings for each configured
+company by trying common ATS platforms (Greenhouse, Lever, Ashby).
 
-> **Known limitation — broad APIs:** these boards' search endpoints return
-> loosely-related remote jobs (e.g. searching "ServiceNow Developer" returns
-> generic remote developers). The backend's **strict relevance filter removes all
-> non-ServiceNow / non-remote / non-US jobs before saving**, so the stored data
-> stays clean. On days with no genuine ServiceNow remote-US postings, a real
-> scrape correctly stores 0 jobs rather than padding with irrelevant ones.
+### Configured Companies (via `COMPANY_CAREER_TARGETS`)
 
-> **Keyword note:** the architecture is keyword/term-agnostic — change
-> `REQUIRED_MATCH_TERM`, `TARGET_COUNTRY` and `DEFAULT_KEYWORDS` to target any
-> role/country without code changes.
+Samsara, 1Password, Grafana Labs, Humana, MongoDB, Wiz, Oscilar, Circle,
+Palo Alto Networks, Veeam Software, Lumenalta, Ruby Labs, Caylent, Yuno,
+micro1, Hostinger, Kraken, Scopely, LaunchDarkly, Fleetio, Trafilea,
+Absorb Software, GoGuardian, Polygon Labs, Workweek, Automattic, Deel
 
----
+### ATS Platforms Supported
 
-## ⛔ Skipped / blocked sources
+| ATS | API Endpoint | Public? | Notes |
+|-----|-------------|---------|-------|
+| Greenhouse | `boards-api.greenhouse.io/v1/boards/{slug}/jobs` | Yes | Most common |
+| Lever | `api.lever.co/v0/postings/{slug}` | Yes | Common for startups |
+| Ashby | `api.ashbyhq.com/posting-api/job-board/{slug}` | Yes | Growing adoption |
+| Workday | `{company}.wd*.myworkdayjobs.com/wday/cxs/{company}/External/jobs` | Yes | Enterprise ATS |
+| SmartRecruiters | `api.smartrecruiters.com/v1/companies/{id}/postings` | Yes | Mid-market ATS |
+| Recruitee | `{company}.recruitee.com/api/offers/` | Yes | EU-popular ATS |
+| Teamtailor | `{company}.teamtailor.com/jobs.json` | Yes | Modern ATS |
+| Comeet | — | TBD | Not yet implemented |
 
-Built In, Hiring Cafe and Jobright now make a **real best-effort public request**
-on each run (no login, no stealth browser, no anti-bot bypass). When the data is
-not publicly accessible they raise a descriptive error and the run reports them
-as `blocked` with the exact HTTP status — visible in `GET /api/scraper/diagnostics`
-and the **Source Diagnostics** UI tab. The remaining boards are policy-blocked
-stubs (never queried) so they stay visible here with reasons.
+## Compliance Notes
 
-| Source | Runtime status | How determined | Reason |
-|--------|---------------|----------------|--------|
-| **Built In** | `blocked` | **Live attempt** (httpx + BeautifulSoup) | Returns **HTTP 403** to automated clients; listings are JavaScript-rendered. robots.txt also disallows the keyword search path (`Disallow: /jobs*?search=`). Not bypassed per policy. **TODO (PM):** official feed / allowed structured endpoint. |
-| **Hiring Cafe** | `blocked` | **Live attempt** (POST probe) | Public probe returns **HTTP 405**; no documented public API and robots.txt disallows the search mechanism (`Disallow: /*?searchState=*`). **TODO (PM):** confirm an official public/partner API. |
-| **Jobright** | `skipped` (disabled) → `blocked` if enabled | **Live attempt when enabled** | SPA with no server-rendered jobs and no confirmed public API; data behind an account. `ENABLE_JOBRIGHT=false` by default. **TODO (PM):** confirm access. |
-| **Indeed** | `blocked` | Policy review | Direct scraping skipped for compliance + blocking risk. Open Publisher API retired/approval-gated. **TODO (PM):** evaluate Publisher/Employer API. |
-| **SimplyHired** | `blocked` | Policy review | Part of the Indeed network; scraping skipped for compliance/blocking risk. No approved public API. |
-| **Glassdoor** | `blocked` | Policy review | Jobs/content restricted; scraping prohibited by TOS; API partner-gated. **TODO (PM):** evaluate partner program. |
-| **ZipRecruiter** | `blocked` | Policy review | TOS restrict scraping/crawling. Partner/publisher API required. |
-| **LinkedIn** | `blocked` | Policy review | TOS prohibit unauthorized scraping; no free public jobs API. Requires partner API. |
+1. **No login bypass**: Sources requiring authentication are marked as blocked stubs.
+2. **No CAPTCHA solving**: Anti-bot protections are respected; blocked sources report the reason.
+3. **No stealth browsers**: Only standard HTTP clients (httpx) with polite User-Agent.
+4. **Rate limiting**: 1.5s delay between requests to any single source.
+5. **robots.txt respected**: All active sources have been checked for robots.txt compliance.
+6. **Public APIs only**: We use only officially provided or obviously public endpoints.
 
-> **Why "0 jobs" can be correct:** active sources are checked every run and the
-> per-source funnel (raw → ServiceNow → remote → US → saved) is recorded. If no
-> job passes all three filters, the portal honestly shows 0 rather than padding
-> with unrelated jobs — and the diagnostics prove the sources were attempted and
-> show every rejection reason.
+## How to Add a New Source
 
-> **Compliance note:** the `ENABLE_BUILTIN` and `ENABLE_HIRING_CAFE` env flags
-> exist for forward-compatibility, but a hard compliance gate in code keeps both
-> sources skipped today regardless of the flag. They activate only after a
-> compliant access path is implemented.
-
----
-
-## How to add / activate a new source
-
-1. Create `backend/app/scraper/sources/source_xxx.py` subclassing `BaseSource`.
-2. Fill in the compliance metadata: `status`, `uses_api`, `robots_checked`,
-   `tos_checked`, and `reason_if_skipped` (if not active).
-3. **Verify robots.txt and Terms of Service first.** Prefer an official API.
-4. Implement `fetch(keyword)` returning a list of `RawJob`.
-5. Register the adapter in `backend/app/scraper/sources/__init__.py`.
-6. Re-run the backend — `sync_sources()` updates the DB and `/api/sources`.
-7. Update the tables above.
-
-If you are ever unsure whether a source is allowed, set `status="needs_api_key"`
-or `"blocked"` with a clear `reason_if_skipped` and add a **TODO (PM)** note here
-— never enable it on a guess.
-
----
-
-## Notes for the Project Manager
-
-- The MVP ships with **3 fully compliant, key-free API sources**. This is enough
-  to demonstrate every acceptance criterion end-to-end.
-- The big-name boards (LinkedIn, Indeed, Glassdoor, Naukri) are **intentionally
-  not scraped**. Each needs a business/legal decision (partner API, paid access)
-  before integration. They are listed above as blockers, not silently dropped.
-- For richer ServiceNow-specific volume, the cleanest next step is adding
-  **company career-page adapters** (e.g. Greenhouse / Lever / Ashby public board
-  APIs for specific employers), which are generally API-accessible and allowed.
+1. Create a new file in `backend/app/scraper/sources/` extending `BaseSource`.
+2. Implement the `fetch(keyword: str) -> List[RawJob]` method.
+3. Add a config toggle `enable_<source>: bool` in `config.py`.
+4. Import and instantiate in `backend/app/scraper/sources/__init__.py`.
+5. Add to `.env.example`.
+6. Update this report.
+7. Test with `python -m app.cli test-source <name>`.

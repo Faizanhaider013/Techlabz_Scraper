@@ -117,6 +117,35 @@ class Settings(BaseSettings):
     enable_glassdoor: bool = False
     enable_ziprecruiter: bool = False
 
+    # ----- New job board source toggles -----------------------------------
+    enable_jobspresso: bool = True
+    enable_virtual_vocations: bool = False
+    enable_stackoverflow_jobs: bool = False
+    enable_outsourcely: bool = True
+    enable_toptal: bool = False
+    enable_skipthedrive: bool = True
+    enable_nodesk: bool = True
+    enable_remotehabits: bool = False
+    enable_remote4me: bool = True
+    enable_pangian: bool = True
+    enable_remotees: bool = True
+    enable_europe_remotely: bool = True
+    enable_remoteok_europe: bool = True
+    enable_remote_of_asia: bool = False
+    enable_flexjobs: bool = False
+    enable_remote_co: bool = True
+    enable_weworkremotely: bool = True
+    enable_wellfound: bool = False
+    enable_linkedin: bool = False
+    enable_upwork: bool = False
+    enable_freelancer: bool = False
+    enable_working_nomads: bool = True
+    enable_remote_freelance: bool = True
+    enable_remote_rocketship: bool = False
+    enable_waw_asia: bool = True
+    enable_hubstaff_talent: bool = True
+    enable_company_careers: bool = True
+
     # ----- Key-gated API sources (off unless enabled AND key present) ------
     enable_adzuna: bool = False
     enable_usajobs: bool = False
@@ -128,6 +157,19 @@ class Settings(BaseSettings):
     usajobs_api_key: str = ""
     the_muse_api_key: str = ""
     jooble_api_key: str = ""
+
+    # ----- Company career / ATS configuration -----------------------------
+    company_career_targets: str = (
+        "Samsara,1Password,Grafana Labs,Humana,MongoDB,Wiz,Oscilar,Circle,"
+        "Palo Alto Networks,Veeam Software,Lumenalta,Ruby Labs,Caylent,Yuno,"
+        "micro1,Hostinger,Kraken,Scopely,LaunchDarkly,Fleetio,Trafilea,"
+        "Absorb Software,GoGuardian,Polygon Labs,Workweek,Automattic,Deel"
+    )
+    workday_companies: str = ""
+    smartrecruiters_companies: str = ""
+    recruitee_companies: str = ""
+    teamtailor_companies: str = ""
+    comeet_companies: str = ""
 
     # ----- Debug / filter tuning ------------------------------------------
     # Show near-matches (ServiceNow jobs that failed remote/US) in diagnostics
@@ -215,6 +257,30 @@ class Settings(BaseSettings):
     @property
     def ashby_board_list(self) -> List[str]:
         return self._csv(self.ashby_boards)
+
+    @property
+    def company_career_target_list(self) -> List[str]:
+        return self._csv(self.company_career_targets)
+
+    @property
+    def workday_company_list(self) -> List[str]:
+        return self._csv(self.workday_companies)
+
+    @property
+    def smartrecruiters_company_list(self) -> List[str]:
+        return self._csv(self.smartrecruiters_companies)
+
+    @property
+    def recruitee_company_list(self) -> List[str]:
+        return self._csv(self.recruitee_companies)
+
+    @property
+    def teamtailor_company_list(self) -> List[str]:
+        return self._csv(self.teamtailor_companies)
+
+    @property
+    def comeet_company_list(self) -> List[str]:
+        return self._csv(self.comeet_companies)
 
 
 @lru_cache

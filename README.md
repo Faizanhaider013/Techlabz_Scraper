@@ -149,9 +149,18 @@ Two connected parts in a monorepo:
 | **Backend** (`backend/`) | FastAPI API + scraper engine + scheduler + database. Collects jobs from source adapters, normalizes them, removes duplicates, tags "posted today", logs every run, and serves a REST API. |
 | **Frontend** (`frontend/`) | React + Tailwind website. Job cards, search, filters, sorting, a prominent **Posted Today** tab, job detail modal, stats dashboard, loading/empty states, fully responsive. |
 
-The system ships with **3 fully compliant, key-free API sources** (RemoteOK,
-Remotive, Arbeitnow) and a documented compliance model for restricted sources
-(LinkedIn/Indeed/Glassdoor/Naukri). See [`SOURCES_REPORT.md`](./SOURCES_REPORT.md).
+The system ships with **48 registered sources** across three tiers:
+
+- **Active API/feed sources** (RemoteOK, Remotive, Arbeitnow, Himalayas,
+  We Work Remotely, Working Nomads, Jobspresso, Remote.co, and more)
+- **ATS career board adapters** (Greenhouse, Lever, Ashby, Workday,
+  SmartRecruiters, Recruitee, Teamtailor) — no API key required
+- **Company Careers orchestrator** — discovers jobs across multiple ATS
+  platforms for configured company names
+- **Blocked/skipped stubs** for compliance-restricted sources (LinkedIn,
+  Indeed, FlexJobs, etc.) — documented with reasons, never scraped
+
+See [`SOURCES_REPORT.md`](./SOURCES_REPORT.md) for the full inventory.
 
 ---
 
@@ -291,6 +300,9 @@ python -m app.cli diagnose-sources   # dry run: per-source funnel table (why 0 j
 python -m app.cli diagnose-queries   # dry run: per-query funnel table
 python -m app.cli list-categories    # categories + enabled state
 python -m app.cli list-keywords      # all category keywords
+python -m app.cli list-sources       # show all 48 sources with status/method
+python -m app.cli test-source remotive  # test a single source adapter
+python -m app.cli test-company-careers  # test company career discovery
 uvicorn app.main:app --reload --port 8000
 ```
 
@@ -332,6 +344,15 @@ python -m app.cli list-keywords
 
 # Print every ServiceNow module group + the generated query set
 python -m app.cli list-modules
+
+# List all 48 registered sources with enabled/status/method
+python -m app.cli list-sources
+
+# Test a single source adapter (fetch + display raw results)
+python -m app.cli test-source <source_name>
+
+# Test company career discovery across ATS platforms
+python -m app.cli test-company-careers
 
 # Remove already-stored jobs that fail the strict filter (cleanup without reset)
 python -m app.cli clean-irrelevant
@@ -487,20 +508,41 @@ irrelevant jobs even if asked to.
 5. Register it in `backend/app/scraper/sources/__init__.py`.
 6. Restart — `sync_sources()` updates the DB and `/api/sources` automatically.
 7. Update [`SOURCES_REPORT.md`](./SOURCES_REPORT.md).
+8. Run `python -m app.cli test-source <name>` to verify the adapter works.
 
 Restricted sources (no API / scraping forbidden) should be added as a stub with
 `status="blocked"` / `"needs_api_key"` and a clear reason — never enabled on a guess.
 
 ### Adding company ATS boards (no API key — best for ServiceNow)
 
-The **Greenhouse / Lever / Ashby** adapters pull jobs straight from employer
-career boards with no key. Just list company/board tokens in `backend/.env`:
+The **Greenhouse / Lever / Ashby / Workday / SmartRecruiters / Recruitee /
+Teamtailor** adapters pull jobs straight from employer career boards with no key.
+Just list company/board tokens in `backend/.env`:
 
 ```env
+# Original ATS adapters
 GREENHOUSE_BOARDS=gitlab,thirdera      # boards.greenhouse.io/<token>
 LEVER_COMPANIES=leverdemo              # jobs.lever.co/<token>
 ASHBY_BOARDS=ramp                      # jobs.ashbyhq.com/<token>
+
+# New ATS adapters (added June 2026)
+WORKDAY_COMPANIES=salesforce,adobe     # <company>.wd5.myworkdayjobs.com
+SMARTRECRUITERS_COMPANIES=visa,sap     # api.smartrecruiters.com/v1/companies/<id>
+RECRUITEE_COMPANIES=example            # <company>.recruitee.com/api/offers/
+TEAMTAILOR_COMPANIES=example           # <company>.teamtailor.com careers page
 ```
+
+### Company Careers orchestrator
+
+The `company_careers` adapter tries **multiple ATS platforms** for each company
+name in `COMPANY_CAREER_TARGETS`. It automatically discovers whether a company
+uses Greenhouse, Lever, or Ashby and fetches their public job listings:
+
+```env
+COMPANY_CAREER_TARGETS=stripe,gitlab,datadog,cloudflare,hashicorp
+```
+
+Test with: `python -m app.cli test-company-careers`
 
 Add the tokens of **ServiceNow partner/consulting firms** (the employers who
 actually hire ServiceNow people) to get genuine, compliant ServiceNow roles.
@@ -574,14 +616,18 @@ Target: **Vercel** (or Netlify / any static host).
 
 ## 13. Known limitations
 
-- The 3 active sources are broad **remote-focused** aggregators whose search
-  endpoints often return loosely-related jobs. The strict filter discards
-  everything that isn't ServiceNow + remote + US, so on many days a real scrape
-  legitimately stores **0 jobs**. This is intended — see `ENABLE_MOCK_DATA` (§5)
-  to preview the UI with sample data during development.
+- Many of the 48 registered sources are broad **remote-focused** aggregators
+  whose search endpoints often return loosely-related jobs. The strict filter
+  discards everything that doesn't match an enabled category + remote + US,
+  so on many days a real scrape may legitimately store **fewer jobs than raw
+  results**. This is intended — see `ENABLE_MOCK_DATA` (§5) to preview the UI
+  with sample data during development.
+- Several best-effort sources (Remote4Me, Pangian, Outsourcely, etc.) may
+  return 0 jobs if their sites block automated access — this is handled
+  gracefully and reported in diagnostics.
 - The big-name boards (LinkedIn, Indeed, Glassdoor, Naukri) are **not scraped**
   for compliance reasons — they require partner/official API access (see report).
-- Source date formats vary; unpar-seable dates leave `normalized_date_posted`
+- Source date formats vary; unparseable dates leave `normalized_date_posted`
   null (such jobs sort last and aren't counted as "today").
 - In-process scheduler runs only while the API process is alive — use cron for
   serverless hosts.
@@ -592,15 +638,16 @@ Target: **Vercel** (or Netlify / any static host).
 
 ## 14. Sources included and skipped
 
-| Included (active) | Skipped / blocked |
-|-------------------|-------------------|
-| RemoteOK (public API) | Built In (HTTP 403 + robots disallows `?search=`) |
-| Remotive (public API) | Hiring Cafe (no public API; robots disallows search) |
-| Arbeitnow (public API) | Indeed / SimplyHired (gated/approval, blocking risk) |
-| Himalayas (public API) | Glassdoor (partner API only) |
-| Greenhouse (public ATS, no key) | ZipRecruiter (TOS restricts crawling) |
-| Lever (public ATS, no key) | Jobright (login-gated; no confirmed public API) |
-| Ashby (public ATS, no key) | LinkedIn (TOS forbids scraping; partner API) |
+**48 total sources** — run `python -m app.cli list-sources` for the live list.
+
+| Tier | Sources |
+|------|---------|
+| **Active API/feed** | RemoteOK, Remotive, Arbeitnow, Himalayas, We Work Remotely, Working Nomads, Jobspresso, Remote.co, NoDesk, SkipTheDrive, Hubstaff Talent, Europe Remotely |
+| **ATS adapters** (no key) | Greenhouse, Lever, Ashby, Workday, SmartRecruiters, Recruitee, Teamtailor |
+| **Company Careers** | Multi-ATS discovery for configured company names |
+| **Best-effort** | Waw Asia, Remote4Me, Pangian, Remotees, Outsourcely, Remote Freelance |
+| **Keyed sources** | Adzuna, USAJOBS, The Muse, Jooble (require API keys) |
+| **Blocked/skipped** | LinkedIn, Indeed, SimplyHired, Glassdoor, ZipRecruiter, FlexJobs, Toptal, Virtual Vocations, Stack Overflow Jobs (discontinued), RemoteHabits, Wellfound, Upwork, Freelancer, Built In, Hiring Cafe, Jobright, and more |
 
 Full reasoning, official-API status, and PM notes: [`SOURCES_REPORT.md`](./SOURCES_REPORT.md).
 

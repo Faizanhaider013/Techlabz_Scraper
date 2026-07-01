@@ -103,3 +103,63 @@ class BaseSource(ABC):
         data = self._get_json(url, params=params, headers=headers)
         self._run_cache[key] = data
         return data
+
+    def _get_html(self, url: str, *, params: dict | None = None,
+                  headers: dict | None = None) -> str:
+        """Fetch an HTML page and return the raw text. Uses polite rate limiting."""
+        default_headers = {
+            "User-Agent": (
+                "JobAggregatorBot/1.0 (+https://example.com/bot; respects robots.txt)"
+            ),
+            "Accept": "text/html,application/xhtml+xml",
+        }
+        if headers:
+            default_headers.update(headers)
+        time.sleep(settings.request_delay_seconds)
+        self.pages_fetched += 1
+        with httpx.Client(timeout=settings.request_timeout_seconds, follow_redirects=True) as client:
+            resp = client.get(url, params=params, headers=default_headers)
+            resp.raise_for_status()
+            return resp.text
+
+    def _cached_get_html(self, url: str, *, params: dict | None = None,
+                         headers: dict | None = None) -> str:
+        """Like _get_html but cached per run."""
+        key = f"html|{url}|{sorted((params or {}).items())}"
+        cached = self._run_cache.get(key)
+        if cached is not None:
+            return cached
+        html = self._get_html(url, params=params, headers=headers)
+        self._run_cache[key] = html
+        return html
+
+    def _get_rss(self, url: str, *, params: dict | None = None) -> list[dict]:
+        """Fetch an RSS/Atom feed and return a list of item dicts."""
+        import xml.etree.ElementTree as ET
+
+        html_text = self._cached_get_html(url, params=params, headers={
+            "Accept": "application/rss+xml, application/xml, text/xml",
+        })
+        items: list[dict] = []
+        try:
+            root = ET.fromstring(html_text)
+            # RSS 2.0: channel/item
+            ns = {"atom": "http://www.w3.org/2005/Atom"}
+            for item in root.iter("item"):
+                entry: dict = {}
+                for child in item:
+                    tag = child.tag.split("}")[-1] if "}" in child.tag else child.tag
+                    entry[tag] = (child.text or "").strip()
+                items.append(entry)
+            # Atom: entry
+            if not items:
+                for item in root.iter("{http://www.w3.org/2005/Atom}entry"):
+                    entry = {}
+                    for child in item:
+                        tag = child.tag.split("}")[-1] if "}" in child.tag else child.tag
+                        val = child.text or child.get("href", "")
+                        entry[tag] = (val or "").strip()
+                    items.append(entry)
+        except ET.ParseError:
+            self.logger.warning("Failed to parse RSS/XML from %s", url)
+        return items

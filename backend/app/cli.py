@@ -1,5 +1,6 @@
 
 
+
 """Command-line interface for running the scraper outside the API process.
 
 Usage:
@@ -11,6 +12,9 @@ Usage:
     python -m app.cli list-categories   # print all job categories + enabled state
     python -m app.cli list-keywords     # print all category keywords
     python -m app.cli list-modules      # print every ServiceNow module group + queries
+    python -m app.cli list-sources      # print all sources with status/method
+    python -m app.cli test-source NAME  # run one source only and print diagnostics
+    python -m app.cli test-company-careers  # run company career sources only
     python -m app.cli init-db           # create tables and seed sources/keywords
     python -m app.cli reset-db          # DROP all tables, recreate, reseed (DEV)
     python -m app.cli clean-non-today   # delete jobs whose date is not today
@@ -207,7 +211,7 @@ def cmd_diagnose_sources() -> None:
             )
             note = (r.error_message or r.reason or "")
             if note:
-                print(f"{'':<14}↳ {note[:90]}")
+                print(f"{'':>14}↳ {note[:90]}")
         total_saved = sum(r.saved_count for r in rows)
         # Aggregate module coverage across all sources for this run.
         module_totals: dict[str, int] = {}
@@ -311,6 +315,127 @@ def cmd_list_keywords() -> None:
         print("  " + ", ".join(keywords))
 
 
+def cmd_list_sources() -> None:
+    """Print all registered sources with enabled/implemented/status/method."""
+    from app.scraper.sources import ALL_SOURCES
+
+    print("\n=== Registered Sources ===")
+    header = f"{'source_name':<22}{'enabled':<10}{'implemented':<14}{'status':<16}{'method':<12}"
+    print(header)
+    print("-" * len(header))
+    for s in ALL_SOURCES:
+        enabled = "yes" if s.status == "active" else "no"
+        implemented = "yes" if s.status not in ("blocked", "skipped") or s.__class__.__name__ != "_BlockedSource" else "stub"
+        # Determine method
+        if s.uses_api:
+            method = "api"
+        elif s.type == "mock":
+            method = "mock"
+        else:
+            method = "html/rss"
+
+        # Override implemented for blocked sources
+        if s.status in ("blocked", "skipped"):
+            implemented = "stub"
+
+        print(f"{s.name:<22}{enabled:<10}{implemented:<14}{s.status:<16}{method:<12}")
+        if s.reason_if_skipped:
+            print(f"{'':>22}-> {s.reason_if_skipped[:80]}")
+
+
+def cmd_test_source() -> None:
+    """Run one source only and print diagnostics."""
+    if len(sys.argv) < 3:
+        print("Usage: python -m app.cli test-source SOURCE_NAME")
+        print("Example: python -m app.cli test-source remotive")
+        sys.exit(1)
+
+    source_name = sys.argv[2]
+    from app.scraper.sources import ALL_SOURCES
+
+    # Find the source (case-insensitive match)
+    source = None
+    for s in ALL_SOURCES:
+        if s.name.lower() == source_name.lower():
+            source = s
+            break
+
+    if source is None:
+        print(f"Source '{source_name}' not found. Available sources:")
+        for s in ALL_SOURCES:
+            print(f"  - {s.name} [{s.status}]")
+        sys.exit(1)
+
+    print(f"\n=== Testing source: {source.name} ===")
+    print(f"Status: {source.status}")
+    print(f"Type: {source.type}")
+    print(f"Base URL: {source.base_url}")
+    print(f"Uses API: {source.uses_api}")
+
+    if source.status in ("blocked", "skipped"):
+        print(f"\nSource is {source.status}: {source.reason_if_skipped}")
+        print("Not fetching (would be skipped by the engine).")
+        return
+
+    from app.scraper.query_builder import build_search_queries
+
+    init_db()
+    keywords = build_search_queries()[:5]  # Use first 5 queries only for test
+    print(f"\nTesting with {len(keywords)} keyword(s): {', '.join(keywords[:3])}...")
+
+    source.pages_fetched = 0
+    source._run_cache = {}
+    total_raw = 0
+
+    for kw in keywords:
+        try:
+            jobs = source.fetch(kw)
+            total_raw += len(jobs)
+            if jobs:
+                print(f"  [{kw}] -> {len(jobs)} raw job(s)")
+                for j in jobs[:2]:
+                    print(f"    - {j.title[:60]} @ {j.company_name[:30]}")
+        except Exception as exc:
+            print(f"  [{kw}] -> ERROR: {exc}")
+            break
+
+    print(f"\nTotal raw jobs: {total_raw}")
+    print(f"Pages fetched: {source.pages_fetched}")
+    print("Done.")
+
+
+def cmd_test_company_careers() -> None:
+    """Test the company careers source specifically."""
+    from app.config import settings
+    from app.scraper.sources.company_careers import CompanyCareersSource
+
+    print("\n=== Testing Company Careers ===")
+    print(f"Enabled: {settings.enable_company_careers}")
+    print(f"Targets: {settings.company_career_target_list[:5]}... ({len(settings.company_career_target_list)} total)")
+
+    if not settings.enable_company_careers:
+        print("Company careers disabled. Set ENABLE_COMPANY_CAREERS=true.")
+        return
+
+    source = CompanyCareersSource()
+    source.pages_fetched = 0
+    source._run_cache = {}
+
+    try:
+        jobs = source.fetch("software engineer")
+        print(f"\nTotal raw jobs found: {len(jobs)}")
+        # Group by company
+        by_company: dict[str, int] = {}
+        for j in jobs:
+            by_company[j.company_name] = by_company.get(j.company_name, 0) + 1
+        print(f"Companies with jobs: {len(by_company)}")
+        for company, count in sorted(by_company.items(), key=lambda x: x[1], reverse=True):
+            print(f"  {company}: {count} job(s)")
+        print(f"Pages fetched: {source.pages_fetched}")
+    except Exception as exc:
+        print(f"ERROR: {exc}")
+
+
 def cmd_sources() -> None:
     from app.scraper.sources import ALL_SOURCES
 
@@ -334,6 +459,9 @@ def main() -> None:
         "list-categories": cmd_list_categories,
         "list-keywords": cmd_list_keywords,
         "list-modules": cmd_list_modules,
+        "list-sources": cmd_list_sources,
+        "test-source": cmd_test_source,
+        "test-company-careers": cmd_test_company_careers,
         "init-db": cmd_init_db,
         "reset-db": cmd_reset_db,
         "clean-non-today": cmd_clean_non_today,
