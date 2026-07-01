@@ -63,7 +63,7 @@ class Settings(BaseSettings):
     # ----- Target volume + query expansion ---------------------------------
     min_target_jobs: int = 50
     max_target_jobs: int = 100
-    max_queries_per_source: int = 100
+    max_queries_per_source: int = 5
     enable_query_expansion: bool = True
     enable_module_search: bool = True
     enable_role_search: bool = True
