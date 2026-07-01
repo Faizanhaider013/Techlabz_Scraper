@@ -46,9 +46,23 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# ---- CORS: allow Vercel production, Vercel preview, and localhost ----------
+_cors_origins = [
+    "http://localhost:5173",
+    "http://localhost:3000",
+    "http://127.0.0.1:5173",
+    "https://techlabz-scraper.vercel.app",
+]
+# Merge any additional origins from the CORS_ORIGINS env var (if set).
+for origin in settings.cors_origin_list:
+    if origin not in _cors_origins:
+        _cors_origins.append(origin)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origin_list,
+    allow_origins=_cors_origins,
+    # Vercel preview deployments use dynamic subdomains — match them via regex.
+    allow_origin_regex=r"^https://techlabz-scraper(-.*)?\.vercel\.app$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
