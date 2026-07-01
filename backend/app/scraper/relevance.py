@@ -105,31 +105,45 @@ _REMOTE_TERMS = (
     "remote first",
     "distributed",
     "telecommute",
+    "remote us",
+    "remote - united states",
 )
 _HYBRID_TERMS = ("hybrid",)
+# Hard-reject terms: if the ONLY signal is onsite/office, fail the remote check.
+_ONSITE_TERMS = ("onsite", "on-site", "on site", "in-office", "in office")
 
 # Countries / regions that, on their own, fail the US filter.
 _NON_US_ONLY = (
-    "brazil",
     "india",
     "pakistan",
-    "europe",
-    "united kingdom",
-    "canada",
+    "bangladesh",
+    "philippines",
+    "vietnam",
+    "china",
+    "japan",
+    "singapore",
+    "australia",
     "germany",
-    "spain",
-    "portugal",
     "france",
+    "spain",
+    "italy",
+    "netherlands",
+    "brazil",
+    "mexico",
+    "canada",
+    "united kingdom",
+    "uk",
+    "europe",
+    "emea",
     "latam",
+    "apac",
     "latin america",
     "south america",
     "central america",
-    "mexico",
     "argentina",
     "africa",
     "asia",
-    "australia",
-    "philippines",
+    "portugal",
     "ukraine",
     "poland",
 )
@@ -390,7 +404,7 @@ def is_remote_job(job: dict) -> bool:
     """True if the job is clearly remote.
 
     Passes on an explicit remote flag or a remote keyword. Fails when the only
-    signal is hybrid/onsite, or when there is no remote indicator at all.
+    signal is hybrid/onsite/office, or when there is no remote indicator at all.
     """
     if job.get("remote") is True:
         return True
@@ -403,6 +417,11 @@ def is_remote_job(job: dict) -> bool:
     # "hybrid" without any stronger full-remote signal is treated as not remote.
     if any(term in text for term in _HYBRID_TERMS):
         if "fully remote" not in text and "100% remote" not in text:
+            return False
+
+    # Onsite / office jobs are rejected unless an explicit remote override exists.
+    if any(term in text for term in _ONSITE_TERMS):
+        if "fully remote" not in text and "100% remote" not in text and "remote" not in text.replace("on-site", "").replace("onsite", "").replace("office", ""):
             return False
     return True
 
@@ -453,8 +472,40 @@ def mentions_non_us_only(job: dict) -> bool:
     return any(re.search(r"\b" + re.escape(c) + r"\b", text) for c in _non_us_only_terms())
 
 
+# Explicit US override phrases: if any of these appear in the location text,
+# the job is US-eligible even if a blocked country is also named.
+_US_OVERRIDE_PHRASES = (
+    "remote us",
+    "remote - us",
+    "remote - united states",
+    "remote united states",
+    "us citizens",
+    "united states",
+)
+
+
+def _has_explicit_us_signal(text: str) -> bool:
+    """Return True if the text contains an unambiguous US signal."""
+    for phrase in _US_OVERRIDE_PHRASES:
+        if phrase in text:
+            return True
+    if re.search(r"\bu\.?\s?s\.?\s?a\b", text):
+        return True
+    if "u.s." in text:
+        return True
+    # Word-boundary "us" only (avoids "Belarus", "bus", etc.)
+    if re.search(r"\bus\b", text):
+        return True
+    return False
+
+
 def is_us_job(job: dict) -> bool:
-    """True if the job is US-based or open to US candidates."""
+    """True if the job is US-based or open to US candidates.
+
+    A job that mentions a blocked country (India, Germany, etc.) is still
+    accepted if an explicit US signal is also present (e.g. "Remote US" or
+    "US Citizens").
+    """
     if not settings.country_filter_enabled:
         return True
 
@@ -462,34 +513,43 @@ def is_us_job(job: dict) -> bool:
     if not text:
         return False
 
+    has_us = _has_explicit_us_signal(text)
+
     # Extra accepted location strings from configuration. Only multi-word
     # phrases (e.g. "Remote US", "Remote United States") are matched by substring;
     # short single tokens like "US"/"USA" are handled by the precise regex checks
-    # below to avoid false positives (e.g. "Belarus" containing "us").
-    for loc in settings.target_location_list:
-        nloc = normalize_text(loc)
-        if nloc and " " in nloc and nloc in text:
-            return True
+    # above to avoid false positives (e.g. "Belarus" containing "us").
+    if not has_us:
+        for loc in settings.target_location_list:
+            nloc = normalize_text(loc)
+            if nloc and " " in nloc and nloc in text:
+                has_us = True
+                break
 
-    if re.search(r"\bunited states\b", text):
-        return True
-    if re.search(r"\bu\.?\s?s\.?\s?a\b", text):  # usa / u.s.a / u s a
-        return True
-    if "u.s." in text or re.search(r"\bus\b", text):
-        return True
-    if "north america" in text:
-        return True
-    # "america" but not "latin/south/central america".
-    if re.search(r"\bamerica\b", text) and not re.search(
-        r"(latin|south|central)\s+america", text
-    ):
-        return True
+    if not has_us:
+        if re.search(r"\bunited states\b", text):
+            has_us = True
+        elif "north america" in text:
+            has_us = True
+        elif re.search(r"\bamerica\b", text) and not re.search(
+            r"(latin|south|central)\s+america", text
+        ):
+            has_us = True
 
     # Concrete US locations from ATS boards: full state names, or ", XX" codes.
-    if any(re.search(r"\b" + name + r"\b", text) for name in _US_STATE_NAMES):
+    if not has_us:
+        if any(re.search(r"\b" + name + r"\b", text) for name in _US_STATE_NAMES):
+            has_us = True
+        elif _US_STATE_ABBR_RE.search(text):
+            has_us = True
+
+    # If we found a US signal, accept (even if a blocked country also appears).
+    if has_us:
         return True
-    if _US_STATE_ABBR_RE.search(text):
-        return True
+
+    # REJECT if a non-US-only country is mentioned with NO US signal.
+    if mentions_non_us_only(job):
+        return False
 
     # Audience is US + Canada: accept clear Canadian signals too.
     if settings.allow_us_or_canada and is_canada_job(job):
@@ -595,3 +655,25 @@ def classify_job(job: dict, normalized_date=None) -> dict:
         "matched_modules": matched_modules,
         "matched_roles": [],
     }
+
+
+# ---------------------------------------------------------------------------
+# Reusable filter utilities (for external callers / tests)
+# ---------------------------------------------------------------------------
+
+def is_recent_job(posted_date, lookback_days: int | None = None) -> bool:
+    """True if the job was posted within the configured lookback window.
+
+    ``posted_date`` may be a ``datetime``, ``date``, or raw string. The
+    ``lookback_days`` parameter defaults to ``settings.scraper_lookback_days``
+    (env: ``LOOKBACK_DAYS``, default 10).
+
+    Usage::
+
+        >>> is_recent_job("2026-06-28")   # True if within 10 days of today
+        >>> is_recent_job(some_date, lookback_days=3)
+    """
+    from app.scraper.date_utils import is_within_window  # avoid circular import
+
+    days = lookback_days if lookback_days is not None else settings.scraper_lookback_days
+    return is_within_window(normalized_date=posted_date, days=days)

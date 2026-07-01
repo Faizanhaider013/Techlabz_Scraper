@@ -98,8 +98,8 @@ class Settings(BaseSettings):
     target_country: str = "US"
     # Extra location strings accepted as a US match (comma separated).
     target_locations: str = "United States,USA,US,U.S.,Remote US,Remote United States"
-    # Accept Canadian remote roles in addition to US (the audience is US/Canada).
-    allow_us_or_canada: bool = True
+    # Accept Canadian remote roles in addition to US.
+    allow_us_or_canada: bool = False
     # Development-only mock data. Disabled by default; never used in production.
     enable_mock_data: bool = False
 
