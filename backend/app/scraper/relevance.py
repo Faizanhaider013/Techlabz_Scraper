@@ -164,6 +164,49 @@ def normalize_text(text) -> str:
     return t.strip()
 
 
+_REJECT_TERMS = (
+    "python", "ai engineer", "machine learning", "data scientist", "deep learning",
+    "llm", "nlp", "prompt engineer", "generative ai", "devops", "cloud engineer",
+    "aws engineer", "azure engineer", "gcp engineer", "cyber security", "qa",
+    "tester", "mobile developer", "android", "ios", "flutter", "react native",
+    "embedded", "blockchain", "rust", "go", "java", "c#", "c++", "sap", "salesforce"
+)
+
+_ALLOWED_PRIMARY_SIGNALS = (
+    "servicenow", "service now", "now platform", "mern", "mean", "node", "express",
+    "nestjs", "php", "symfony", "codeigniter", "wordpress", "drupal", "laravel",
+    "blade", "eloquent", "react", "vue", "angular", "frontend", "front-end",
+    "front end", "typescript", "javascript"
+)
+
+
+def is_explicitly_rejected(job: dict) -> bool:
+    title_norm = normalize_text(job.get("title"))
+    body_norm = normalize_text(job.get("full_description") or job.get("description") or job.get("short_description"))
+    full_text = f"{title_norm} {body_norm}"
+
+    has_reject = False
+    for term in _REJECT_TERMS:
+        if term == "c++":
+            pattern = r"\bc\+\+\b"
+        elif term == "c#":
+            pattern = r"\bc#\b"
+        else:
+            pattern = r"\b" + re.escape(term) + r"\b"
+        if re.search(pattern, full_text):
+            has_reject = True
+            break
+
+    if not has_reject:
+        return False
+
+    for allowed in _ALLOWED_PRIMARY_SIGNALS:
+        if re.search(r"\b" + re.escape(allowed) + r"\b", full_text):
+            return False
+
+    return True
+
+
 def mentions_target_term(*parts) -> bool:
     """True if the combined text is a candidate for any enabled job category.
 
@@ -343,6 +386,16 @@ def classify_job_category(job: dict) -> dict:
           "reason": str,
         }
     """
+    if is_explicitly_rejected(job):
+        return {
+            "is_relevant": False,
+            "primary_category": None,
+            "matched_categories": [],
+            "matched_keywords": [],
+            "relevance_score": 0,
+            "reason": "explicitly_rejected",
+        }
+
     title_norm = normalize_text(job.get("title"))
     body_norm = _join_fields(job, _SCORE_BODY_FIELDS)
 

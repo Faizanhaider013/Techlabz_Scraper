@@ -93,12 +93,13 @@ def test_marketing_manager_remote_us_fails_not_relevant():
     assert "not_relevant" in reasons
 
 
-def test_quality_engineer_remote_us_now_passes():
-    # Multi-stack: QA is a supported category, so this now passes.
+def test_quality_engineer_remote_us_fails():
+    # Multi-stack: QA is not a supported category and is explicitly rejected.
     allowed, reasons, _ = is_allowed_job(
         job(title="QA Engineer", location="Remote US", remote=True)
     )
-    assert allowed is True, reasons
+    assert allowed is False
+    assert "not_relevant" in reasons
 
 
 # ---------------------------------------------------------------------------
@@ -146,3 +147,25 @@ def test_ats_servicenow_remote_us_job_passes():
         )
     )
     assert allowed is True, reasons
+
+
+def test_explicitly_rejected_roles():
+    # Python role (no allowed stack signal) -> rejected
+    allowed, reasons, _ = is_allowed_job(job(title="Python Developer", location="Remote US"))
+    assert allowed is False
+    assert "not_relevant" in reasons
+
+    # DevOps role (no allowed stack signal) -> rejected
+    allowed, reasons, _ = is_allowed_job(job(title="DevOps Engineer", location="Remote US"))
+    assert allowed is False
+    assert "not_relevant" in reasons
+
+    # Python role WITH allowed stack signal (ServiceNow) -> allowed
+    allowed, reasons, _ = is_allowed_job(job(title="ServiceNow Developer (Python a plus)", location="Remote US"))
+    assert allowed is True, reasons
+    assert "allowed" in reasons
+
+    # Java role WITH allowed stack signal (React) -> allowed
+    allowed, reasons, _ = is_allowed_job(job(title="React Frontend Developer (Java experience)", location="Remote US"))
+    assert allowed is True, reasons
+    assert "allowed" in reasons

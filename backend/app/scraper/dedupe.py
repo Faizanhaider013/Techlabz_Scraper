@@ -53,17 +53,16 @@ def normalize_url(url: str | None) -> str:
 
 
 def compute_dedupe_key(
-    *, original_apply_url: str | None, title: str, company_name: str, location: str
+    *, company_name: str, title: str, location: str, original_apply_url: str | None, source_name: str
 ) -> str:
-    """Return a stable fingerprint used as the unique dedupe_key.
+    """Return a stable fingerprint using Company, Title, Location, Application URL, and Source.
 
-    Prefers the normalized URL; otherwise uses title|company|location.
+    Hashed for exact duplicate detection.
     """
-    url = normalize_url(original_apply_url)
-    if url:
-        basis = f"url::{url}"
-    else:
-        basis = "tcl::" + "|".join(
-            normalize_text(x) for x in (title, company_name, location)
-        )
+    c = normalize_text(company_name)
+    t = normalize_text(title)
+    l = normalize_text(location)
+    u = normalize_url(original_apply_url)
+    s = normalize_text(source_name)
+    basis = f"{c}|{t}|{l}|{u}|{s}"
     return hashlib.sha256(basis.encode("utf-8")).hexdigest()[:40]

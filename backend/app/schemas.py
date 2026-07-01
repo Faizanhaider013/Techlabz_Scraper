@@ -29,7 +29,7 @@ class JobBase(BaseModel):
     company_name: str
     location: str
     date_posted_raw: Optional[str] = None
-    normalized_date_posted: Optional[datetime] = None
+    posted_date: Optional[datetime] = None
     is_posted_today: bool
     job_type: Optional[str] = None
     salary: Optional[str] = None
@@ -122,6 +122,7 @@ class StatsResponse(BaseModel):
     posted_today: int
     last_3_days: int
     last_7_days: int
+    last_10_days: int
     # Source coverage + rejection breakdown from the latest run.
     sources_attempted: int = 0
     sources_with_results: int = 0

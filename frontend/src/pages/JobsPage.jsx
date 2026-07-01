@@ -19,7 +19,9 @@ const DEFAULT_FILTERS = {
   category: "",
   keyword: "",
   location: "",
-  date_filter: "all",
+  days: "10",
+  start_date: "",
+  end_date: "",
   source: "",
   sort: "newest",
   page: 1,
@@ -57,7 +59,6 @@ export default function JobsPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [toast, setToast] = useState(null);
   const [lastRefreshed, setLastRefreshed] = useState(null);
-  const [tab, setTab] = useState("all"); // "all" | "today"
   const resultsRef = useRef(null);
 
   const keywordOptions = KEYWORD_FILTERS;
@@ -70,19 +71,24 @@ export default function JobsPage() {
     setLoading(true);
     setError(null);
     try {
-      const effective =
-        tab === "today" ? { ...filters, date_filter: "today" } : filters;
-      setData(await api.getJobs(effective));
+      setData(await api.getJobs(filters));
     } catch (e) {
       setError(e.message);
     } finally {
       setLoading(false);
     }
-  }, [filters, tab]);
+  }, [filters]);
 
   const fetchMeta = useCallback(async () => {
     try {
-      const [s, src] = await Promise.all([api.getStats(), api.getSources()]);
+      const [s, src] = await Promise.all([
+        api.getStats({
+          days: filters.days,
+          start_date: filters.start_date,
+          end_date: filters.end_date,
+        }),
+        api.getSources(),
+      ]);
       setStats(s);
       setSources(src.filter((x) => x.status === "active").map((x) => x.name));
     } catch {
@@ -90,7 +96,7 @@ export default function JobsPage() {
     } finally {
       setStatsLoaded(true);
     }
-  }, []);
+  }, [filters.days, filters.start_date, filters.end_date]);
 
   const fetchDiagnostics = useCallback(async () => {
     setDiagLoading(true);
@@ -174,8 +180,21 @@ export default function JobsPage() {
   const total = data?.total || 0;
   const pages = data?.pages || 0;
   const windowDays = stats?.window_days ?? 0;
-  const recentLabel = windowDays > 0 ? `Last ${windowDays} Days` : "Today Jobs";
   const diagUnavailable = diagnostics?.unavailable === true;
+
+  const activeDateLabel = useMemo(() => {
+    if (filters.days === "0") return "Posted Today";
+    if (filters.days === "3") return "Last 3 Days";
+    if (filters.days === "7") return "Last 7 Days";
+    if (filters.days === "10") return "Last 10 Days";
+    if (filters.days) return `Last ${filters.days} Days`;
+    if (filters.start_date || filters.end_date) {
+      return `Custom Range`;
+    }
+    return "All Jobs";
+  }, [filters.days, filters.start_date, filters.end_date]);
+
+  const isTodayActive = filters.days === "0";
 
   return (
     <AppShell
@@ -215,20 +234,22 @@ export default function JobsPage() {
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex gap-2">
                 <Tab
-                  active={tab === "all"}
+                  active={!isTodayActive}
                   onClick={() => {
-                    setTab("all");
-                    setFilters((f) => ({ ...f, date_filter: "all", page: 1 }));
+                    if (isTodayActive) {
+                      setFilters((f) => ({ ...f, days: "10", start_date: "", end_date: "", page: 1 }));
+                    }
                   }}
                 >
                   <LayoutGrid className="h-4 w-4" />
-                  {recentLabel}
+                  {activeDateLabel}
                 </Tab>
                 <Tab
-                  active={tab === "today"}
+                  active={isTodayActive}
                   onClick={() => {
-                    setTab("today");
-                    setFilters((f) => ({ ...f, page: 1 }));
+                    if (!isTodayActive) {
+                      setFilters((f) => ({ ...f, days: "0", start_date: "", end_date: "", page: 1 }));
+                    }
                   }}
                 >
                   <CircleDot className="h-4 w-4" />
@@ -237,7 +258,7 @@ export default function JobsPage() {
                     <span
                       className={clsx(
                         "rounded-full px-1.5 text-xs font-mono",
-                        tab === "today" ? "bg-white/20" : "bg-emerald-100 text-emerald-700"
+                        isTodayActive ? "bg-white/20" : "bg-emerald-100 text-emerald-700"
                       )}
                     >
                       {stats.posted_today}

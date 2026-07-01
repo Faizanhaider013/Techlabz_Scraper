@@ -27,7 +27,7 @@ class Job(Base):
         # dedupe_key is the canonical fingerprint of a job; it must be unique.
         UniqueConstraint("dedupe_key", name="uq_jobs_dedupe_key"),
         Index("ix_jobs_is_posted_today", "is_posted_today"),
-        Index("ix_jobs_normalized_date", "normalized_date_posted"),
+        Index("ix_jobs_posted_date", "posted_date"),
         Index("ix_jobs_keyword", "keyword_matched"),
         Index("ix_jobs_source", "source_name"),
         Index("ix_jobs_primary_category", "primary_category"),
@@ -41,7 +41,7 @@ class Job(Base):
     # Raw, as reported by the source (e.g. "3 days ago", "2026-06-25").
     date_posted_raw: Mapped[str | None] = mapped_column(String(255), nullable=True)
     # Normalized, timezone-aware posting date.
-    normalized_date_posted: Mapped[datetime | None] = mapped_column(
+    posted_date: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
     is_posted_today: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

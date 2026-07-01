@@ -20,7 +20,9 @@ def get_jobs(
     q: Optional[str] = Query(None, description="Free-text search on title/company/keyword"),
     keyword: Optional[str] = None,
     location: Optional[str] = None,
-    date_filter: str = Query("all", pattern="^(today|last_3_days|last_7_days|all)$"),
+    days: Optional[int] = Query(10, description="Freshness lookback in days"),
+    start_date: Optional[str] = Query(None, description="Start date YYYY-MM-DD"),
+    end_date: Optional[str] = Query(None, description="End date YYYY-MM-DD"),
     source: Optional[str] = None,
     remote_type: Optional[str] = None,
     module: Optional[str] = Query(None, description="Filter by matched ServiceNow module code"),
@@ -34,7 +36,9 @@ def get_jobs(
         q=q,
         keyword=keyword,
         location=location,
-        date_filter=date_filter,
+        days=days,
+        start_date=start_date,
+        end_date=end_date,
         source=source,
         remote_type=remote_type,
         module=module,
@@ -60,7 +64,7 @@ def get_today_jobs(
     limit: int = Query(20, ge=1, le=100),
 ):
     jobs, total = job_service.list_jobs(
-        db, date_filter="today", sort=sort, page=page, limit=limit
+        db, days=0, sort=sort, page=page, limit=limit
     )
     return JobListResponse(
         items=[JobBase.model_validate(j) for j in jobs],

@@ -16,6 +16,10 @@ from app.scraper.servicenow_taxonomy import module_label
 from app.schemas import CountItem, StatsResponse
 
 
+from typing import Optional
+from datetime import datetime, timezone
+
+
 def _relevant():
     """Hard filter shared by every stat: remote + US (relevance enforced at save)."""
     return (Job.is_remote.is_(True), Job.is_us.is_(True))
@@ -25,19 +29,43 @@ def _range_filter(days: int):
     """SQL conditions restricting to jobs within the last ``days`` days.
 
     Authoritative: derived from the live clock in APP_TIMEZONE applied to
-    normalized_date_posted, never the frozen is_posted_today flag.
+    posted_date, never the frozen is_posted_today flag.
     """
     start, end = get_window_range(days)
     return (
-        Job.normalized_date_posted.isnot(None),
-        Job.normalized_date_posted >= start,
-        Job.normalized_date_posted <= end,
+        Job.posted_date.isnot(None),
+        Job.posted_date >= start,
+        Job.posted_date <= end,
     )
 
 
-def _window_filter():
-    """Scope breakdowns to the active freshness window (today-only or last N days)."""
-    return _range_filter(settings.date_window_days) if settings.date_filter_active else ()
+def _range_filter_dynamic(days: Optional[int], start_date: Optional[str], end_date: Optional[str]):
+    from dateutil.parser import parse as parse_iso
+
+    conds = [Job.posted_date.isnot(None)]
+
+    if start_date or end_date:
+        if start_date:
+            try:
+                start_dt = parse_iso(start_date).replace(tzinfo=timezone.utc)
+                conds.append(Job.posted_date >= start_dt)
+            except Exception:
+                pass
+        if end_date:
+            try:
+                end_dt = parse_iso(end_date).replace(hour=23, minute=59, second=59, microsecond=999999, tzinfo=timezone.utc)
+                conds.append(Job.posted_date <= end_dt)
+            except Exception:
+                pass
+    elif days is not None:
+        if days == 0:
+            start_dt = now_local().replace(hour=0, minute=0, second=0, microsecond=0)
+            conds.append(Job.posted_date >= start_dt)
+        else:
+            cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+            conds.append(Job.posted_date >= cutoff)
+
+    return conds
 
 
 def _count_since(db: Session, days: int) -> int:
@@ -46,14 +74,14 @@ def _count_since(db: Session, days: int) -> int:
         select(func.count())
         .select_from(Job)
         .where(*_relevant())
-        .where(Job.normalized_date_posted >= cutoff)
+        .where(Job.posted_date >= cutoff)
     ).scalar_one()
 
 
-def _top(db: Session, column, limit: int = 8) -> list[CountItem]:
+def _top(db: Session, column, active_conds: list, limit: int = 8) -> list[CountItem]:
     rows = db.execute(
         select(column, func.count().label("c"))
-        .where(*_relevant(), *_window_filter())
+        .where(*_relevant(), *active_conds)
         .where(column.isnot(None))
         .where(column != "")
         .group_by(column)
@@ -74,7 +102,12 @@ def _latest_run_diagnostics(db: Session) -> list[SourceDiagnostic]:
     ).scalars().all()
 
 
-def get_stats(db: Session) -> StatsResponse:
+def get_stats(
+    db: Session,
+    days: Optional[int] = 10,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+) -> StatsResponse:
     # "Posted today" is always strictly today (window 0) -- drives the badge/tab.
     today_count = db.execute(
         select(func.count())
@@ -83,19 +116,15 @@ def get_stats(db: Session) -> StatsResponse:
         .where(*_range_filter(0))
     ).scalar_one()
 
-    # Headline total = jobs within the active freshness window (today-only or
-    # last N days); all-time only when no date gate is active.
-    if settings.date_filter_active:
-        total = db.execute(
-            select(func.count())
-            .select_from(Job)
-            .where(*_relevant())
-            .where(*_window_filter())
-        ).scalar_one()
-    else:
-        total = db.execute(
-            select(func.count()).select_from(Job).where(*_relevant())
-        ).scalar_one()
+    active_conds = _range_filter_dynamic(days, start_date, end_date)
+
+    # Headline total = jobs within active window.
+    total = db.execute(
+        select(func.count())
+        .select_from(Job)
+        .where(*_relevant())
+        .where(*active_conds)
+    ).scalar_one()
 
     diags = _latest_run_diagnostics(db)
     attempted = [d for d in diags if d.enabled]
@@ -104,7 +133,7 @@ def get_stats(db: Session) -> StatsResponse:
     # Module coverage across stored jobs in the active window.
     module_rows = db.execute(
         select(Job.matched_modules)
-        .where(*_relevant(), *_window_filter())
+        .where(*_relevant(), *active_conds)
         .where(Job.matched_modules.isnot(None))
     ).scalars().all()
     module_counter: Counter = Counter()
@@ -123,7 +152,7 @@ def get_stats(db: Session) -> StatsResponse:
     # Category coverage across stored jobs in the active window.
     cat_rows = db.execute(
         select(Job.primary_category, func.count().label("c"))
-        .where(*_relevant(), *_window_filter())
+        .where(*_relevant(), *active_conds)
         .where(Job.primary_category.isnot(None))
         .where(Job.primary_category != "")
         .group_by(Job.primary_category)
@@ -139,6 +168,7 @@ def get_stats(db: Session) -> StatsResponse:
         posted_today=today_count,
         last_3_days=_count_since(db, 3),
         last_7_days=_count_since(db, 7),
+        last_10_days=_count_since(db, 10),
         sources_attempted=len(attempted),
         sources_with_results=len(with_results),
         rejected_old_jobs=sum(d.rejected_old_date for d in diags),
@@ -147,14 +177,14 @@ def get_stats(db: Session) -> StatsResponse:
         rejected_non_remote=sum(d.rejected_non_remote for d in diags),
         rejected_non_us=sum(d.rejected_non_us for d in diags),
         today_only=settings.today_only,
-        window_days=settings.date_window_days,
+        window_days=days if days is not None else 10,
         modules_covered=len(module_counter),
         sources_checked=len(attempted),
         total_categories=len(category_breakdown),
         module_breakdown=module_breakdown,
         category_breakdown=category_breakdown,
-        top_companies=_top(db, Job.company_name),
-        top_locations=_top(db, Job.location),
-        source_breakdown=_top(db, Job.source_name),
-        keyword_breakdown=_top(db, Job.keyword_matched),
+        top_companies=_top(db, Job.company_name, active_conds),
+        top_locations=_top(db, Job.location, active_conds),
+        source_breakdown=_top(db, Job.source_name, active_conds),
+        keyword_breakdown=_top(db, Job.keyword_matched, active_conds),
     )

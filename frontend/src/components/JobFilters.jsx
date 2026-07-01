@@ -53,6 +53,20 @@ export default function JobFilters({
   if (filters.keyword) active.push({ key: "keyword", label: filters.keyword });
   if (filters.location) active.push({ key: "location", label: filters.location });
   if (filters.source) active.push({ key: "source", label: filters.source });
+  if (filters.days !== defaults.days) {
+    if (filters.days === "0") active.push({ key: "days", label: "Today", reset: defaults.days });
+    else if (filters.days === "3") active.push({ key: "days", label: "Last 3 Days", reset: defaults.days });
+    else if (filters.days === "7") active.push({ key: "days", label: "Last 7 Days", reset: defaults.days });
+    else if (filters.days === "") {
+      if (filters.start_date || filters.end_date) {
+        active.push({
+          key: "days",
+          label: `Custom: ${filters.start_date || "..."} to ${filters.end_date || "..."}`,
+          reset: defaults.days,
+        });
+      }
+    }
+  }
 
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-card">
@@ -73,13 +87,52 @@ export default function JobFilters({
           />
         </Field>
 
-        {/* Freshness notice (no date pills: the window is fixed by config) */}
-        <div className="flex items-center gap-2 rounded-xl bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-700 ring-1 ring-inset ring-emerald-100">
-          <CalendarCheck className="h-4 w-4" />
-          {windowDays > 0
-            ? `Showing jobs from the last ${windowDays} days`
-            : "Showing jobs posted today only"}
-        </div>
+        {/* Date Range Selector */}
+        <Section label="Date Range">
+          <Field icon={CalendarCheck}>
+            <select
+              value={filters.days !== undefined && filters.days !== null && filters.days !== "" ? filters.days : (filters.start_date || filters.end_date ? "custom" : "10")}
+              onChange={(e) => {
+                const val = e.target.value;
+                if (val === "custom") {
+                  set({ days: "", start_date: "", end_date: "" });
+                } else {
+                  set({ days: val, start_date: "", end_date: "" });
+                }
+              }}
+              className={selectBase}
+            >
+              <option value="0">Today</option>
+              <option value="3">Last 3 Days</option>
+              <option value="7">Last 7 Days</option>
+              <option value="10">Last 10 Days (default)</option>
+              <option value="custom">Custom Range</option>
+            </select>
+            <ChevronIcon />
+          </Field>
+          {(filters.days === "" || filters.days === undefined || filters.days === null) && (
+            <div className="grid grid-cols-2 gap-2 mt-2">
+              <div>
+                <label className="text-[10px] font-semibold text-slate-500 uppercase">Start Date</label>
+                <input
+                  type="date"
+                  value={filters.start_date || ""}
+                  onChange={(e) => set({ start_date: e.target.value })}
+                  className="h-9 w-full rounded-lg border border-slate-200 bg-white px-2 text-xs text-slate-800 outline-none focus:border-indigo-400"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] font-semibold text-slate-500 uppercase">End Date</label>
+                <input
+                  type="date"
+                  value={filters.end_date || ""}
+                  onChange={(e) => set({ end_date: e.target.value })}
+                  className="h-9 w-full rounded-lg border border-slate-200 bg-white px-2 text-xs text-slate-800 outline-none focus:border-indigo-400"
+                />
+              </div>
+            </div>
+          )}
+        </Section>
 
         {/* Category */}
         <Section label="Category">
@@ -184,7 +237,13 @@ export default function JobFilters({
               {active.map((chip) => (
                 <button
                   key={chip.key}
-                  onClick={() => set({ [chip.key]: chip.reset ?? "" })}
+                  onClick={() => {
+                    if (chip.key === "days") {
+                      set({ days: chip.reset ?? "10", start_date: "", end_date: "" });
+                    } else {
+                      set({ [chip.key]: chip.reset ?? "" });
+                    }
+                  }}
                   className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2.5 py-1 text-xs font-medium text-indigo-700 ring-1 ring-inset ring-indigo-100 transition hover:bg-indigo-100"
                 >
                   {chip.label}

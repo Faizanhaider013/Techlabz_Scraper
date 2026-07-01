@@ -49,6 +49,9 @@ def detect_remote_type(raw: RawJob) -> Optional[str]:
 def normalize(raw: RawJob, keyword_matched: str) -> dict:
     """Convert a RawJob from a source adapter into a DB-ready dict."""
     normalized_date = parse_date(raw.date_posted_raw)
+    if normalized_date is not None:
+        from datetime import timezone
+        normalized_date = normalized_date.astimezone(timezone.utc)
     full_desc = strip_html(raw.full_description) or None
     short_desc = raw.short_description or make_short_description(raw.full_description)
 
@@ -61,7 +64,7 @@ def normalize(raw: RawJob, keyword_matched: str) -> dict:
         "company_name": company,
         "location": location,
         "date_posted_raw": (str(raw.date_posted_raw).strip() if raw.date_posted_raw is not None else None),
-        "normalized_date_posted": normalized_date,
+        "posted_date": normalized_date,
         "is_posted_today": is_posted_today(
             raw_date=raw.date_posted_raw, normalized_date=normalized_date
         ),
@@ -75,9 +78,10 @@ def normalize(raw: RawJob, keyword_matched: str) -> dict:
         "keyword_matched": keyword_matched,
         "remote_type": detect_remote_type(raw),
         "dedupe_key": compute_dedupe_key(
-            original_apply_url=raw.original_apply_url,
-            title=title,
             company_name=company,
+            title=title,
             location=location,
+            original_apply_url=raw.original_apply_url,
+            source_name=raw.source_name,
         ),
     }

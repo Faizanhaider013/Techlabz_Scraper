@@ -20,7 +20,9 @@ def list_jobs(
     q: Optional[str] = None,
     keyword: Optional[str] = None,
     location: Optional[str] = None,
-    date_filter: str = "all",
+    days: Optional[int] = 10,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
     source: Optional[str] = None,
     remote_type: Optional[str] = None,
     module: Optional[str] = None,
@@ -41,6 +43,7 @@ def list_jobs(
     )
 
     from app.config import settings as _settings
+    from datetime import datetime, timezone, timedelta
 
     if q:
         like = f"%{q.strip().lower()}%"
@@ -83,37 +86,37 @@ def list_jobs(
             )
         )
 
-    # DATE gate (authoritative). Computed from the live clock in APP_TIMEZONE and
-    # applied to normalized_date_posted -- NOT to the stored is_posted_today flag,
-    # which is frozen at scrape time and goes stale. The "Posted Today" tab is
-    # always strictly today (window 0); otherwise the configured freshness window
-    # applies (0 = today-only, 7 = last 7 days), so an out-of-window job can never
-    # be returned.
-    date_filter = date_filter or "all"
-    if date_filter == "today":
-        start, end = get_window_range(0)
-        stmt = stmt.where(
-            Job.normalized_date_posted.isnot(None),
-            Job.normalized_date_posted >= start,
-            Job.normalized_date_posted <= end,
-        )
-    elif _settings.date_filter_active:
-        start, end = get_window_range(_settings.date_window_days)
-        stmt = stmt.where(
-            Job.normalized_date_posted.isnot(None),
-            Job.normalized_date_posted >= start,
-            Job.normalized_date_posted <= end,
-        )
-    elif date_filter in _DATE_WINDOWS and _DATE_WINDOWS[date_filter]:
-        cutoff = now_local() - timedelta(days=_DATE_WINDOWS[date_filter])
-        stmt = stmt.where(Job.normalized_date_posted >= cutoff)
+    # Date range filters: start_date/end_date override days lookback
+    if start_date or end_date:
+        if start_date:
+            try:
+                from dateutil.parser import parse as parse_iso
+                start_dt = parse_iso(start_date).replace(tzinfo=timezone.utc)
+                stmt = stmt.where(Job.posted_date >= start_dt)
+            except Exception:
+                pass
+        if end_date:
+            try:
+                from dateutil.parser import parse as parse_iso
+                end_dt = parse_iso(end_date).replace(hour=23, minute=59, second=59, microsecond=999999, tzinfo=timezone.utc)
+                stmt = stmt.where(Job.posted_date <= end_dt)
+            except Exception:
+                pass
+    elif days is not None:
+        if days == 0:
+            # Special case for "today"
+            start_dt = now_local().replace(hour=0, minute=0, second=0, microsecond=0)
+            stmt = stmt.where(Job.posted_date >= start_dt)
+        else:
+            cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+            stmt = stmt.where(Job.posted_date >= cutoff)
 
     # Count total before pagination.
     count_stmt = select(func.count()).select_from(stmt.subquery())
     total = db.execute(count_stmt).scalar_one()
 
     # Sorting: NULL dates sort last. Posted-today always floats to the top.
-    order_col = Job.normalized_date_posted
+    order_col = Job.posted_date
     direction = asc if sort == "oldest" else desc
     stmt = stmt.order_by(desc(Job.is_posted_today), direction(order_col), desc(Job.id))
 

@@ -75,8 +75,7 @@ class Settings(BaseSettings):
     # ServiceNow-only behaviour.
     job_mode: str = "multi_stack"
     enabled_job_categories: str = (
-        "servicenow,php_laravel,node_backend,react_frontend,mern,mean,fullstack,"
-        "software_engineer,python_backend,devops_cloud,data_ai,qa_automation"
+        "servicenow,mern,mean,node_backend,php,laravel,react_frontend"
     )
     # Minimum relevance score for a job to be accepted (avoids false positives).
     min_relevance_score: int = 70

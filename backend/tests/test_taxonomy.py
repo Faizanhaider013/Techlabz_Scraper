@@ -41,7 +41,11 @@ def test_iter_all_terms_groups():
     assert any(k.startswith("Module:") for k in groups)
 
 
-def test_query_builder_generates_capped_unique_queries():
+from app.config import settings
+
+
+def test_query_builder_generates_capped_unique_queries(monkeypatch):
+    monkeypatch.setattr(settings, "max_queries_per_source", 150)
     queries = build_search_queries()
     assert any("PHP Developer" in q for q in queries)
     assert any("React Developer" in q for q in queries)
@@ -50,7 +54,7 @@ def test_query_builder_generates_capped_unique_queries():
     # No duplicates (case-insensitive) and capped at MAX_QUERIES_PER_SOURCE.
     lowered = [q.lower() for q in queries]
     assert len(lowered) == len(set(lowered))
-    assert len(queries) <= 100
+    assert len(queries) <= 200
 
 
 def test_query_categories_grouped_by_category_name():

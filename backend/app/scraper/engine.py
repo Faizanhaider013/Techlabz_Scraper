@@ -17,10 +17,10 @@ from __future__ import annotations
 
 import json
 import traceback
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import List, Optional
 
-from sqlalchemy import select
+from sqlalchemy import select, delete
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -177,7 +177,7 @@ def run_scraper(
 
                 rel_input = build_relevance_input(record, raw)
                 classification = classify_job(
-                    rel_input, normalized_date=record["normalized_date_posted"]
+                    rel_input, normalized_date=record["posted_date"]
                 )
                 diag.record(raw.title, classification)
 
@@ -206,7 +206,7 @@ def run_scraper(
                 record["matched_terms"] = json.dumps(keywords_matched)
                 record["matched_modules"] = json.dumps(modules)
                 record["query_used"] = keyword
-                record["days_old"] = _days_old(record["normalized_date_posted"])
+                record["days_old"] = _days_old(record["posted_date"])
 
                 diag.note_saved(
                     keyword, raw.title, modules,
@@ -239,6 +239,7 @@ def run_scraper(
 
     if not dry_run:
         _refresh_posted_today(db)
+        _cleanup_old_jobs(db)
 
     # ---- Aggregate run totals + persist diagnostics -----------------------
     total_raw = sum(d.raw_count for d in diags.values())
@@ -339,7 +340,7 @@ def _upsert_job(db: Session, record: dict) -> bool:
         db.add(Job(**record))
         return True
 
-    existing.normalized_date_posted = record["normalized_date_posted"] or existing.normalized_date_posted
+    existing.posted_date = record["posted_date"] or existing.posted_date
     existing.is_posted_today = record["is_posted_today"]
     existing.short_description = record["short_description"] or existing.short_description
     existing.full_description = record["full_description"] or existing.full_description
@@ -364,10 +365,19 @@ def _refresh_posted_today(db: Session) -> None:
     jobs = db.execute(select(Job)).scalars().all()
     changed = 0
     for job in jobs:
-        flag = is_posted_today(job.normalized_date_posted)
+        flag = is_posted_today(job.posted_date)
         if job.is_posted_today != flag:
             job.is_posted_today = flag
             changed += 1
     if changed:
         db.commit()
         logger.info("Refreshed is_posted_today on %d job(s)", changed)
+
+
+def _cleanup_old_jobs(db: Session) -> None:
+    """DELETE jobs older than settings.scraper_lookback_days (default 10 days)."""
+    cutoff = datetime.now(timezone.utc) - timedelta(days=settings.scraper_lookback_days)
+    stmt = delete(Job).where(Job.posted_date < cutoff)
+    res = db.execute(stmt)
+    db.commit()
+    logger.info("Database cleanup: deleted %d job(s) older than %d days", res.rowcount, settings.scraper_lookback_days)

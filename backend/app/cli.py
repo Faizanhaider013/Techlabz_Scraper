@@ -147,7 +147,7 @@ def _delete_out_of_window(db) -> int:
     for job in db.execute(select(Job)).scalars().all():
         if not is_within_window(
             raw_date=job.date_posted_raw,
-            normalized_date=job.normalized_date_posted,
+            normalized_date=job.posted_date,
             days=settings.date_window_days,
         ):
             db.delete(job)
