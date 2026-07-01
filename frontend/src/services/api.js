@@ -49,8 +49,8 @@ export const api = {
       throw e;
     }
   },
-  // Synchronous run so the UI can refresh with fresh results immediately.
-  triggerScraper: () => request("/api/scraper/run?wait=true", { method: "POST" }),
+  // Trigger scraper in the background (asynchronous, returns instantly)
+  triggerScraper: () => request("/api/scraper/run", { method: "POST" }),
 };
 
 export { BASE_URL };

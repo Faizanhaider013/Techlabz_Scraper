@@ -113,21 +113,44 @@ export default function JobsPage() {
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    showToast("info", "Running scraper across all active sources…");
+    showToast("info", "Scraper started in the background. Fetching progress…");
     try {
-      const result = await api.triggerScraper(); // POST /api/scraper/run?wait=true
-      await Promise.all([fetchJobs(), fetchMeta(), fetchDiagnostics()]);
-      setLastRefreshed(new Date().toISOString());
-      if ((result?.total_new ?? 0) > 0) {
-        showToast("success", `Done — ${result.total_new} remote tech job(s) saved.`);
-        // Smooth scroll to results.
-        setTimeout(() => resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 150);
-      } else {
-        showToast("info", "Scraper ran. No new jobs passed the filters — see diagnostics.");
-      }
+      await api.triggerScraper();
+      
+      let attempts = 0;
+      const maxAttempts = 75; // 75 attempts * 4s = 5 minutes max
+      
+      const poll = setInterval(async () => {
+        attempts++;
+        try {
+          const runs = await api.getRuns();
+          if (runs && runs.length > 0) {
+            const latestRun = runs[0];
+            if (latestRun.status !== "running" || attempts >= maxAttempts) {
+              clearInterval(poll);
+              
+              await Promise.all([fetchJobs(), fetchMeta(), fetchDiagnostics()]);
+              setLastRefreshed(new Date().toISOString());
+              
+              if (latestRun.status === "success") {
+                showToast("success", `Done — ${latestRun.total_new} remote tech job(s) saved.`);
+                setTimeout(() => resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 150);
+              } else if (latestRun.status === "partial") {
+                showToast("success", `Done (with warnings) — ${latestRun.total_new} job(s) saved.`);
+              } else if (latestRun.status === "failed") {
+                showToast("error", "Scraper failed. Check diagnostics for details.");
+              } else {
+                showToast("info", "Scraper completed. Check diagnostics for results.");
+              }
+              setRefreshing(false);
+            }
+          }
+        } catch (err) {
+          // Ignore transient errors
+        }
+      }, 4000);
     } catch (e) {
       showToast("error", `Scraper failed: ${e.message}. Is the backend running?`);
-    } finally {
       setRefreshing(false);
     }
   };
