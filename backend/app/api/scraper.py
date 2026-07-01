@@ -15,12 +15,21 @@ router = APIRouter(prefix="/api/scraper", tags=["scraper"])
 logger = get_logger("api.scraper")
 
 
-def _run_in_background() -> None:
+def _run_in_background(run_id: int) -> None:
     db = SessionLocal()
     try:
-        run_scraper(db, trigger="manual")
+        run_scraper(db, trigger="manual", run_id=run_id)
     except Exception as exc:  # noqa: BLE001
         logger.exception("Background scraper run failed: %s", exc)
+        try:
+            from datetime import datetime, timezone
+            run = db.get(ScraperRun, run_id)
+            if run:
+                run.status = "failed"
+                run.finished_at = datetime.now(timezone.utc)
+                db.commit()
+        except Exception:
+            logger.exception("Failed to mark run as failed in background task")
     finally:
         db.close()
 
@@ -49,9 +58,25 @@ def trigger_scraper(
             status=run.status,
         )
 
-    background_tasks.add_task(_run_in_background)
+    # Pre-create the ScraperRun row synchronously
+    from datetime import datetime, timezone
+    run = ScraperRun(
+        status="running",
+        trigger="manual",
+        started_at=datetime.now(timezone.utc),
+        total_found=0,
+        total_relevant=0,
+        total_new=0,
+        total_duplicates=0,
+    )
+    db.add(run)
+    db.commit()
+    db.refresh(run)
+
+    background_tasks.add_task(_run_in_background, run.id)
     return ScraperRunTriggerResponse(
         message="Scraper run started in the background. Check /api/scraper/runs for results.",
+        run_id=run.id,
         status="running",
     )
 

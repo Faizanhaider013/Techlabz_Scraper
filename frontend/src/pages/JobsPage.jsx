@@ -115,7 +115,8 @@ export default function JobsPage() {
     setRefreshing(true);
     showToast("info", "Scraper started in the background. Fetching progress…");
     try {
-      await api.triggerScraper();
+      const response = await api.triggerScraper();
+      const targetRunId = response?.run_id;
       
       let attempts = 0;
       const maxAttempts = 75; // 75 attempts * 4s = 5 minutes max
@@ -125,19 +126,33 @@ export default function JobsPage() {
         try {
           const runs = await api.getRuns();
           if (runs && runs.length > 0) {
-            const latestRun = runs[0];
-            if (latestRun.status !== "running" || attempts >= maxAttempts) {
+            // Find the run we triggered, fallback to the latest run in the list
+            const targetRun = targetRunId 
+              ? runs.find(r => r.id === targetRunId) 
+              : runs[0];
+            
+            // If we have a targetRunId but the run hasn't appeared in /runs list yet,
+            // continue polling until it appears or timeout.
+            if (targetRunId && !targetRun) {
+              if (attempts >= maxAttempts) {
+                clearInterval(poll);
+                setRefreshing(false);
+              }
+              return;
+            }
+
+            if (targetRun.status !== "running" || attempts >= maxAttempts) {
               clearInterval(poll);
               
               await Promise.all([fetchJobs(), fetchMeta(), fetchDiagnostics()]);
               setLastRefreshed(new Date().toISOString());
               
-              if (latestRun.status === "success") {
-                showToast("success", `Done — ${latestRun.total_new} remote tech job(s) saved.`);
+              if (targetRun.status === "success") {
+                showToast("success", `Done — ${targetRun.total_new} remote tech job(s) saved.`);
                 setTimeout(() => resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 150);
-              } else if (latestRun.status === "partial") {
-                showToast("success", `Done (with warnings) — ${latestRun.total_new} job(s) saved.`);
-              } else if (latestRun.status === "failed") {
+              } else if (targetRun.status === "partial") {
+                showToast("success", `Done (with warnings) — ${targetRun.total_new} job(s) saved.`);
+              } else if (targetRun.status === "failed") {
                 showToast("error", "Scraper failed. Check diagnostics for details.");
               } else {
                 showToast("info", "Scraper completed. Check diagnostics for results.");

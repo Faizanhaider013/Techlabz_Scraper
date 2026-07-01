@@ -87,20 +87,33 @@ def build_relevance_input(record: dict, raw: RawJob) -> dict:
     }
 
 
-def run_scraper(db: Session, trigger: str = "manual", dry_run: bool = False) -> ScraperRun:
+def run_scraper(
+    db: Session,
+    trigger: str = "manual",
+    dry_run: bool = False,
+    run_id: Optional[int] = None,
+) -> ScraperRun:
     """Execute one scrape (or diagnostic dry run) and return the ScraperRun.
 
     When ``dry_run`` is True, sources are fetched and classified but nothing is
     persisted to the jobs table -- used by ``diagnose-sources``.
     """
-    run = ScraperRun(
-        status="running",
-        trigger="diagnostic" if dry_run else trigger,
-        started_at=datetime.now(timezone.utc),
-    )
-    db.add(run)
-    db.commit()
-    db.refresh(run)
+    if run_id is not None:
+        run = db.get(ScraperRun, run_id)
+        if run is None:
+            raise ValueError(f"Pre-allocated ScraperRun #{run_id} not found.")
+        run.status = "running"
+        run.started_at = datetime.now(timezone.utc)
+        db.commit()
+    else:
+        run = ScraperRun(
+            status="running",
+            trigger="diagnostic" if dry_run else trigger,
+            started_at=datetime.now(timezone.utc),
+        )
+        db.add(run)
+        db.commit()
+        db.refresh(run)
 
     keywords = _load_keywords(db)
     active = active_sources()
