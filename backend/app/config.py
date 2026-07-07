@@ -25,9 +25,21 @@ class Settings(BaseSettings):
 
     # Scraper / scheduler
     scraper_interval_hours: int = 4
+    # Preferred cadence in minutes (overrides hours when > 0). Default 30 min.
+    scraper_interval_minutes: int = 30
     enable_scheduler: bool = True
     request_delay_seconds: float = 1.5
     request_timeout_seconds: float = 20.0
+
+    # ----- Async / concurrent scraping ------------------------------------
+    # Run each source concurrently (asyncio.gather) instead of sequentially.
+    enable_async_scraping: bool = True
+    # Max sources fetched in parallel (bounded so we stay a polite client).
+    scraper_max_concurrency: int = 8
+
+    # ----- Read-endpoint response cache -----------------------------------
+    cache_enabled: bool = True
+    cache_ttl_seconds: int = 120
 
     # Keywords are stored as a comma separated string and parsed into a list.
     # Expanded query set to maximise real ServiceNow coverage.

@@ -1,7 +1,6 @@
-# Local PostgreSQL for development.
-# Start with:  docker compose up -d
-# Then set in backend/.env:
-#   DATABASE_URL=postgresql+psycopg2://jobuser:jobpass@localhost:5432/jobaggregator
+# Local dev stack: PostgreSQL + the FastAPI API (with its in-process scheduler).
+# Start with:  docker compose up -d --build
+# API:  http://localhost:8000/docs   Health: http://localhost:8000/health
 services:
   db:
     image: postgres:16-alpine
@@ -20,6 +19,27 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  api:
+    build:
+      context: ./backend
+    container_name: job_aggregator_api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg2://jobuser:jobpass@db:5432/jobaggregator
+      ENABLE_SCHEDULER: "true"
+      SCRAPER_INTERVAL_MINUTES: "30"
+      ENABLE_ASYNC_SCRAPING: "true"
+      SCRAPER_MAX_CONCURRENCY: "8"
+      CACHE_ENABLED: "true"
+      CACHE_TTL_SECONDS: "120"
+      TODAY_ONLY: "false"
+      LOOKBACK_DAYS: "10"
+    ports:
+      - "8000:8000"
 
 volumes:
   pgdata:

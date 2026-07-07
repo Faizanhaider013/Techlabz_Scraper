@@ -19,8 +19,17 @@ def _engine_kwargs(url: str) -> dict:
     # SQLite needs a special flag when used across threads (scheduler + API).
     if url.startswith("sqlite"):
         return {"connect_args": {"check_same_thread": False}}
-    # Reasonable pool defaults for hosted Postgres.
-    return {"pool_pre_ping": True, "pool_size": 5, "max_overflow": 10}
+    # Connection pool tuned for hosted Postgres (e.g. Neon/Render). pool_pre_ping
+    # drops dead connections; pool_recycle refreshes them before the provider's
+    # idle timeout closes them out from under us; pool_timeout bounds how long a
+    # request waits for a free connection so a spike fails fast instead of hanging.
+    return {
+        "pool_pre_ping": True,
+        "pool_size": 5,
+        "max_overflow": 10,
+        "pool_recycle": 300,
+        "pool_timeout": 10,
+    }
 
 
 engine = create_engine(settings.database_url, **_engine_kwargs(settings.database_url))

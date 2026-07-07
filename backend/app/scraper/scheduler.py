@@ -36,19 +36,27 @@ def start_scheduler() -> BackgroundScheduler | None:
     if _scheduler is not None:
         return _scheduler
 
-    interval = max(1, int(settings.scraper_interval_hours))
+    # Prefer minute-level cadence (default every 30 min); fall back to hours.
+    minutes = int(getattr(settings, "scraper_interval_minutes", 0) or 0)
     _scheduler = BackgroundScheduler(timezone="UTC")
+    if minutes > 0:
+        trigger_kwargs = {"minutes": minutes}
+        human = f"{minutes} minute(s)"
+    else:
+        hours = max(1, int(settings.scraper_interval_hours))
+        trigger_kwargs = {"hours": hours}
+        human = f"{hours} hour(s)"
     _scheduler.add_job(
         _scheduled_job,
         trigger="interval",
-        hours=interval,
         id="scrape_job",
         max_instances=1,
         coalesce=True,
         replace_existing=True,
+        **trigger_kwargs,
     )
     _scheduler.start()
-    logger.info("Scheduler started: scraping every %d hour(s).", interval)
+    logger.info("Scheduler started: scraping every %s.", human)
     return _scheduler
 
 

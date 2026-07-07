@@ -16,7 +16,7 @@ if it failed, a captured error -- visible via /api/scraper/diagnostics.
 from __future__ import annotations
 
 import json
-import traceback
+import time
 from datetime import datetime, timezone, timedelta
 from typing import List, Optional
 
@@ -25,6 +25,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.models import Job, ScraperRun, SourceDiagnostic
+from app.scraper.concurrent_fetch import prefetch_all_sources
 from app.scraper.date_utils import is_posted_today
 from app.scraper.diagnostics import (
     STATUS_BLOCKED,
@@ -36,6 +37,7 @@ from app.scraper.normalizer import normalize
 from app.scraper.relevance import classify_job
 from app.scraper.sources import ALL_SOURCES, active_sources
 from app.scraper.sources.base import RawJob
+from app.utils.cache import cache
 from app.utils.logger import get_logger
 
 logger = get_logger("engine")
@@ -115,6 +117,7 @@ def run_scraper(
         db.commit()
         db.refresh(run)
 
+    run_started = time.perf_counter()
     keywords = _load_keywords(db)
     active = active_sources()
     active_names = {s.name for s in active}
@@ -135,29 +138,35 @@ def run_scraper(
         diag.last_error = source.reason_if_skipped
         diags[source.name] = diag
 
-    # ---- Active sources: run the full funnel ------------------------------
+    # ---- Phase 1: concurrent network fetch (asyncio.gather over sources) ---
+    fetch_started = time.perf_counter()
+    prefetched = prefetch_all_sources(active, keywords)
+    fetch_elapsed = time.perf_counter() - fetch_started
+    logger.info(
+        "Fetch phase complete in %.1fs (%s, %d source(s))",
+        fetch_elapsed,
+        "async" if settings.enable_async_scraping else "sequential",
+        len(active),
+    )
+
+    # ---- Phase 2: serial funnel (classify -> dedupe -> save) --------------
     for source in active:
         diag = SourceDiag(source_name=source.name, enabled=True)
         diags[source.name] = diag
         source_seen: set[str] = set()
-        source.pages_fetched = 0  # adapters increment this per page fetched
-        source._run_cache = {}    # fresh feed/board cache for this run
+        result = prefetched.get(source.name)
+        if result is None:
+            continue
+        if result.error:
+            diag.status = result.status
+            diag.last_error = result.error
 
         for keyword in keywords:
-            diag.queries_tried += 1
-            logger.info("  [%s] fetching keyword=%r", source.name, keyword)
-            try:
-                raw_jobs = source.fetch(keyword)
-            except Exception as exc:  # noqa: BLE001 - one source must not kill the run
-                msg = f"{type(exc).__name__}: {exc}"
-                logger.error("  [%s] fetch failed: %s", source.name, msg)
-                logger.debug(traceback.format_exc())
-                diag.status = source.failure_status
-                diag.last_error = msg
-                # A blocked source fails identically for every keyword -> stop early.
-                if source.failure_status == "blocked":
-                    break
+            if keyword not in result.per_keyword:
+                # Source aborted early (blocked) before this keyword.
                 continue
+            diag.queries_tried += 1
+            raw_jobs = result.per_keyword[keyword]
 
             for raw in raw_jobs:
                 if not raw.original_apply_url or not raw.title:
@@ -226,7 +235,7 @@ def run_scraper(
 
         if not dry_run:
             db.commit()
-        diag.pages_fetched = getattr(source, "pages_fetched", 0)
+        diag.pages_fetched = result.pages_fetched
         diag.finalize()
         logger.info(
             "  [%s] status=%s raw=%d today=%d sn=%d remote=%d us=%d saved=%d "
@@ -280,10 +289,16 @@ def run_scraper(
     db.commit()
     db.refresh(run)
 
+    # New jobs were written -> invalidate the read-endpoint cache so the API
+    # serves fresh data on the next request (no-op for diagnostic dry runs).
+    if not dry_run:
+        cache.clear()
+
+    total_elapsed = time.perf_counter() - run_started
     logger.info(
-        "Scraper run #%d %s | raw=%d saved(today)=%d dup=%d | rejected: "
+        "Scraper run #%d %s in %.1fs | raw=%d saved(today)=%d dup=%d | rejected: "
         "old=%d unknown=%d non-SN=%d non-remote=%d non-US=%d",
-        run.id, status, total_raw, total_saved, total_dupes,
+        run.id, status, total_elapsed, total_raw, total_saved, total_dupes,
         total_old_rej, total_unknown_rej, total_sn_rej, total_rm_rej, total_us_rej,
     )
     return run

@@ -30,7 +30,13 @@ class Job(Base):
         Index("ix_jobs_posted_date", "posted_date"),
         Index("ix_jobs_keyword", "keyword_matched"),
         Index("ix_jobs_source", "source_name"),
+        Index("ix_jobs_company", "company_name"),
+        Index("ix_jobs_location", "location"),
         Index("ix_jobs_primary_category", "primary_category"),
+        # The default listing filters on (is_remote, is_us) and orders by
+        # (is_posted_today, posted_date desc). A composite index lets Postgres
+        # satisfy the hot path with a single index scan.
+        Index("ix_jobs_listing", "is_remote", "is_us", "posted_date"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)

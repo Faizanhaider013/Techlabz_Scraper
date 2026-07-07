@@ -1,0 +1,49 @@
+# ---------------------------------------------------------------------------
+# Render blueprint for the TechLabz Scraper API.
+#
+# The API and the 30-minute in-process scheduler run in ONE web service (the
+# APScheduler lives inside the FastAPI process). A tiny cron pings /health so
+# the free instance never cold-starts a user request.
+# ---------------------------------------------------------------------------
+services:
+  - type: web
+    name: techlabz-scraper-api
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: starter                 # 'starter' has no cold starts; 'free' sleeps.
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: DATABASE_URL
+        sync: false               # set in the Render dashboard (Neon URL)
+      - key: ENABLE_SCHEDULER
+        value: "true"
+      - key: SCRAPER_INTERVAL_MINUTES
+        value: "30"
+      - key: ENABLE_ASYNC_SCRAPING
+        value: "true"
+      - key: SCRAPER_MAX_CONCURRENCY
+        value: "8"
+      - key: CACHE_ENABLED
+        value: "true"
+      - key: CACHE_TTL_SECONDS
+        value: "120"
+      - key: TODAY_ONLY
+        value: "false"
+      - key: LOOKBACK_DAYS
+        value: "10"
+      - key: CORS_ORIGINS
+        value: "https://techlabz-scraper.vercel.app"
+
+  # Keep-alive: pings /health every 10 min so the web instance stays warm and
+  # the first real user request is fast (only needed on the free plan).
+  - type: cron
+    name: techlabz-keepalive
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    schedule: "*/10 * * * *"
+    dockerCommand: >-
+      python -c "import urllib.request;
+      urllib.request.urlopen('https://techlabz-scraper-api.onrender.com/health')"
