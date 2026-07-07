@@ -177,6 +177,10 @@ class Settings(BaseSettings):
     # If a ServiceNow remote job's location is worldwide/anywhere (no US named)
     # AND no non-US-only country is named, treat it as US-eligible.
     allow_remote_worldwide_if_us_not_excluded: bool = False
+    # Accept jobs that are EXPLICITLY worldwide/global remote (e.g. "Worldwide",
+    # "Work From Anywhere", "Global Remote", "Remote Anywhere"). These pass the
+    # location gate alongside US jobs because a worldwide role includes the US.
+    accept_worldwide_remote: bool = True
 
     # ----- Company ATS boards (no API key needed) -------------------------
     # Comma-separated board/company tokens. Empty -> that platform is a no-op.

@@ -63,8 +63,8 @@ def test_python_developer_remote_worldwide_fails():
         job(title="Python Developer", location="Remote Worldwide")
     )
     assert allowed is False
-    # Relevant + remote, but worldwide is not US-eligible by default.
-    assert "not_us" in reasons
+    # Worldwide IS US-eligible (spec §8); this job is rejected on relevance (Python).
+    assert "not_relevant" in reasons
 
 
 def test_frontend_engineer_remote_europe_fails():
@@ -123,7 +123,9 @@ def test_is_remote_rejects_onsite():
 def test_is_us_rejects_other_countries():
     assert is_us_job(job(location="United States")) is True
     assert is_us_job(job(location="Germany")) is False
-    assert is_us_job(job(location="Remote Worldwide")) is False
+    # Explicit worldwide/global remote is accepted (spec §8) -- it includes US.
+    assert is_us_job(job(location="Remote Worldwide")) is True
+    assert is_us_job(job(location="Remote - India")) is False
 
 
 def test_is_us_recognizes_states_and_codes():

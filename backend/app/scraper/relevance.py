@@ -166,8 +166,9 @@ def normalize_text(text) -> str:
 
 _REJECT_TERMS = (
     "python", "ai engineer", "machine learning", "data scientist", "deep learning",
-    "llm", "nlp", "prompt engineer", "generative ai", "devops", "cloud engineer",
-    "aws engineer", "azure engineer", "gcp engineer", "cyber security", "qa",
+    "llm", "nlp", "prompt engineer", "generative ai", "computer vision", "mlops",
+    "devops", "cloud engineer", "aws engineer", "azure engineer", "gcp engineer",
+    "aws", "azure", "gcp", "cyber security", "security engineer", "qa",
     "tester", "mobile developer", "android", "ios", "flutter", "react native",
     "embedded", "blockchain", "rust", "go", "java", "c#", "c++", "sap", "salesforce"
 )
@@ -481,6 +482,33 @@ def is_remote_job(job: dict) -> bool:
 
 _WORLDWIDE_TERMS = ("worldwide", "anywhere", "global", "international")
 
+# Phrases that EXPLICITLY declare a job open worldwide/globally. Per spec these
+# are accepted alongside US jobs (a worldwide role includes US candidates). Kept
+# deliberately explicit so a bare country name (e.g. "Anywhere in India") never
+# sneaks through -- only unambiguous global phrasing qualifies.
+_EXPLICIT_WORLDWIDE_PHRASES = (
+    "worldwide remote",
+    "remote worldwide",
+    "worldwide",
+    "work from anywhere",
+    "remote anywhere",
+    "anywhere remote",
+    "anywhere in the world",
+    "global remote",
+    "remote global",
+    "fully remote global",
+)
+
+
+def is_worldwide_remote_job(job: dict) -> bool:
+    """True if the location text explicitly declares a worldwide/global remote role."""
+    if not settings.accept_worldwide_remote:
+        return False
+    text = _join_fields(job, _US_FIELDS + ("remote_type", "workplace_type", "tags"))
+    if not text:
+        return False
+    return any(phrase in text for phrase in _EXPLICIT_WORLDWIDE_PHRASES)
+
 
 # Canadian location signals (accepted alongside the US when ALLOW_US_OR_CANADA).
 _CANADA_TERMS = (
@@ -598,6 +626,11 @@ def is_us_job(job: dict) -> bool:
 
     # If we found a US signal, accept (even if a blocked country also appears).
     if has_us:
+        return True
+
+    # Explicit worldwide / global remote roles are accepted per spec: a role open
+    # "Worldwide" / "Work From Anywhere" includes US candidates.
+    if is_worldwide_remote_job(job):
         return True
 
     # REJECT if a non-US-only country is mentioned with NO US signal.

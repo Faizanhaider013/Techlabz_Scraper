@@ -33,6 +33,14 @@ _RELATIVE_RE = re.compile(
     r"(?P<num>\d+)\s*(?P<unit>second|minute|hour|day|week|month|year)s?\s*ago",
     re.IGNORECASE,
 )
+# Source-specific label prefixes that wrap an otherwise-parseable date, e.g.
+# "Posted Jul 1", "Posted on June 28", "Date posted: 2026-07-01", "Listed 3d ago".
+# Stripped before absolute parsing so labeled dates normalize correctly.
+_DATE_LABEL_RE = re.compile(
+    r"^\s*(?:date\s+)?(?:posted|listed|added|updated|published|created|"
+    r"first\s+posted|posted\s+on)\s*[:\-]?\s*",
+    re.IGNORECASE,
+)
 # Phrases we confidently treat as "today".
 _TODAY_WORDS = {
     "today",
@@ -90,7 +98,7 @@ def normalize_relative_date(raw_date: str, tz_name: Optional[str] = None) -> Opt
     """
     if raw_date is None:
         return None
-    text = str(raw_date).strip().lower()
+    text = _DATE_LABEL_RE.sub("", str(raw_date).strip()).strip().lower()
     if text in _VAGUE_WORDS:
         return None
 
@@ -132,7 +140,9 @@ def parse_date(raw, tz_name: Optional[str] = None) -> Optional[datetime]:
         except (OSError, ValueError, OverflowError):
             return None
 
-    text = str(raw).strip()
+    # Strip source label prefixes ("Posted", "Listed", "Date posted:", ...) so
+    # "Posted Jul 1" / "Posted on June 28" normalize like a bare date.
+    text = _DATE_LABEL_RE.sub("", str(raw).strip()).strip()
     if not text or text.lower() in _VAGUE_WORDS:
         return None
 

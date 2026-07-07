@@ -8,7 +8,14 @@ from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
-from app.scraper.relevance import is_remote_job, is_us_job, is_recent_job
+from app.scraper.relevance import (
+    is_remote_job,
+    is_us_job,
+    is_recent_job,
+    is_worldwide_remote_job,
+    is_explicitly_rejected,
+)
+from app.scraper.date_utils import parse_date, is_within_window
 
 
 # ---------------------------------------------------------------------------
@@ -186,3 +193,87 @@ class TestDateFilter:
         dt = _today() - timedelta(days=4)
         assert is_recent_job(dt, lookback_days=3) is False
         assert is_recent_job(dt, lookback_days=5) is True
+
+
+# ===========================================================================
+# 6. WORLDWIDE / GLOBAL REMOTE — Acceptance (spec §8)
+# ===========================================================================
+
+class TestWorldwideRemote:
+    """Explicitly-stated worldwide/global remote jobs must be accepted."""
+
+    @pytest.mark.parametrize("location", [
+        "Worldwide",
+        "Worldwide Remote",
+        "Remote - Worldwide",
+        "Work From Anywhere",
+        "Remote Anywhere",
+        "Global Remote",
+        "Anywhere in the World",
+    ])
+    def test_worldwide_phrases_accepted(self, location):
+        job = _job(location=location)
+        assert is_worldwide_remote_job(job) is True, f"Should detect worldwide: {location}"
+        assert is_us_job(job) is True, f"Worldwide job should pass US gate: {location}"
+
+    def test_bare_non_us_country_not_worldwide(self):
+        """A specific non-US country is NOT worldwide and stays rejected."""
+        job = _job(location="Anywhere in India")
+        assert is_worldwide_remote_job(job) is False
+        assert is_us_job(job) is False
+
+
+# ===========================================================================
+# 7. SHARED DATE PARSER — source label prefixes (spec §1)
+# ===========================================================================
+
+class TestDateParser:
+    """The shared parser normalizes labeled and relative source dates."""
+
+    @pytest.mark.parametrize("raw", [
+        "Posted Jul 1",
+        "Posted June 28",
+        "Posted on Jul 1",
+        "Date posted: 2026-07-01",
+        "Listed Jul 1",
+    ])
+    def test_labeled_dates_parse(self, raw):
+        assert parse_date(raw) is not None, f"Should parse labeled date: {raw}"
+
+    @pytest.mark.parametrize("raw", ["today", "yesterday", "3 days ago", "2 days ago"])
+    def test_relative_dates_parse(self, raw):
+        assert parse_date(raw) is not None, f"Should parse relative date: {raw}"
+
+    @pytest.mark.parametrize("raw", ["", "recently", "featured", "new"])
+    def test_vague_dates_rejected(self, raw):
+        assert parse_date(raw) is None, f"Vague text should not parse: {raw}"
+
+
+# ===========================================================================
+# 8. EXCLUDED ROLES (spec §6)
+# ===========================================================================
+
+class TestExcludedRoles:
+    """Excluded tech is rejected unless an allowed technology also matches."""
+
+    @pytest.mark.parametrize("title", [
+        "Senior Python Developer",
+        "Machine Learning Engineer",
+        "Computer Vision Engineer",
+        "MLOps Engineer",
+        "Security Engineer",
+        "AWS Cloud Engineer",
+        "Go Developer",
+        "Java Developer",
+    ])
+    def test_excluded_titles_rejected(self, title):
+        assert is_explicitly_rejected({"title": title}) is True, f"Should reject: {title}"
+
+    @pytest.mark.parametrize("title", [
+        "Node.js Developer (AWS experience a plus)",
+        "Laravel Developer familiar with AWS",
+        "React Developer",
+        "ServiceNow Developer",
+    ])
+    def test_allowed_wins_over_excluded(self, title):
+        assert is_explicitly_rejected({"title": title}) is False, f"Should keep: {title}"
